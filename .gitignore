@@ -1,0 +1,27 @@
+# Python 缓存文件，运行后端时会自动生成，不需要提交。
+__pycache__/
+*.py[cod]
+
+# Python 虚拟环境目录，每台机器可以自己创建。
+.venv/
+venv/
+
+# 前端依赖目录，体积很大，可以通过 npm install 重新生成。
+node_modules/
+
+# 前端构建产物，可以通过 npm run build 重新生成。
+dist/
+*.tsbuildinfo
+
+# 本地环境变量文件可能包含密钥，不能提交。
+.env
+.env.*
+
+# 后续任务会生成本地上传文件、截图和数据库，这些属于运行数据。
+storage/
+
+# 系统和编辑器临时文件。
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
