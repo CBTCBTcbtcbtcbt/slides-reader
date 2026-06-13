@@ -192,6 +192,192 @@ h1 {
   color: #193b80;
 }
 
+.documents-panel {
+  display: grid;
+  gap: 16px;
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid #e1e7f0;
+}
+
+.documents-panel h2 {
+  margin: 0 0 6px;
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.documents-panel p {
+  margin: 0;
+  color: #647084;
+}
+
+.document-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.document-list-item {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #d8e0ed;
+  border-radius: 8px;
+  background: #fbfcff;
+}
+
+.document-header {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.document-list-item strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.document-list-item span {
+  display: block;
+  margin-top: 4px;
+  color: #647084;
+  font-size: 14px;
+}
+
+.document-list-item dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.document-list-item dl div {
+  display: grid;
+  gap: 4px;
+}
+
+.document-list-item dt {
+  color: #50607a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.document-list-item dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #1f2a3d;
+}
+
+.document-status {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 26px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #e8eef8;
+  color: #35527e;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.document-status--ready {
+  background: #e6f7ee;
+  color: #1f7a45;
+}
+
+.document-status--failed {
+  background: #fff1f0;
+  color: #b42318;
+}
+
+.document-status--processing {
+  background: #fff7df;
+  color: #8a5b00;
+}
+
+.document-error {
+  padding: 10px 12px;
+  border: 1px solid #f0b7b2;
+  border-radius: 8px;
+  background: #fff7f6;
+  color: #b42318;
+}
+
+.document-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.document-actions button {
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: #2f5fbd;
+  color: #ffffff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.document-actions button:disabled {
+  background: #9aa8bd;
+  cursor: not-allowed;
+}
+
+.document-actions .secondary-button {
+  border: 1px solid #c7d2e3;
+  background: #ffffff;
+  color: #2f466d;
+}
+
+.document-actions .danger-button {
+  background: #c7362f;
+}
+
+.rename-form {
+  display: grid;
+  gap: 10px;
+  min-width: min(360px, 100%);
+}
+
+.rename-form label {
+  display: grid;
+  gap: 6px;
+  color: #50607a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.rename-form input {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid #b8c5d9;
+  border-radius: 8px;
+  color: #1b1f2a;
+}
+
+.document-action-message {
+  padding: 10px 12px;
+  border: 1px solid #c8d6ed;
+  border-radius: 8px;
+  background: #f4f8ff;
+  color: #2f466d;
+  font-weight: 700;
+}
+
+.documents-empty {
+  padding: 14px;
+  border: 1px dashed #ccd5e4;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
 @media (max-width: 560px) {
   .app-shell {
     padding: 16px;
@@ -203,5 +389,13 @@ h1 {
 
   h1 {
     font-size: 26px;
+  }
+
+  .document-header {
+    display: grid;
+  }
+
+  .document-actions {
+    justify-content: flex-start;
   }
 }

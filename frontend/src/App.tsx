@@ -11,9 +11,30 @@ type HealthResponse = {
 
 type UploadResponse = {
   document_id: string;
+  title: string;
   filename: string;
+  file_path: string;
   saved_filename: string;
+  status: string;
+  page_count: number;
+  error_message: string | null;
+  created_at: string;
 };
+
+type DocumentItem = {
+  document_id: string;
+  title: string;
+  file_path: string;
+  status: string;
+  page_count: number;
+  error_message: string | null;
+  created_at: string;
+};
+
+type DocumentActionState = {
+  documentId: string;
+  action: "renaming" | "deleting";
+} | null;
 
 function App() {
   // connectionState 用来记录当前前端连接后端的状态。
@@ -33,6 +54,24 @@ function App() {
 
   // uploadedDocumentId 用来显示后端返回的 document_id。
   const [uploadedDocumentId, setUploadedDocumentId] = useState<string | null>(null);
+
+  // documents 用来保存后端返回的已上传文档列表。
+  const [documents, setDocuments] = useState<DocumentItem[]>([]);
+
+  // documentsMessage 用来显示文档列表加载状态或错误信息。
+  const [documentsMessage, setDocumentsMessage] = useState("正在加载已上传文档...");
+
+  // editingDocumentId 用来记录当前正在编辑标题的文档。
+  const [editingDocumentId, setEditingDocumentId] = useState<string | null>(null);
+
+  // editingTitle 用来暂存用户输入的新标题。
+  const [editingTitle, setEditingTitle] = useState("");
+
+  // documentActionState 用来避免同一时间重复点击重命名或删除按钮。
+  const [documentActionState, setDocumentActionState] = useState<DocumentActionState>(null);
+
+  // documentActionMessage 用来展示重命名或删除操作的结果。
+  const [documentActionMessage, setDocumentActionMessage] = useState("");
 
   useEffect(() => {
     // 使用 AbortController 可以在组件卸载时取消请求，避免无意义的状态更新。
@@ -60,6 +99,7 @@ function App() {
 
         setConnectionState("success");
         setMessage(`后端连接成功：${data.service}`);
+        await loadDocuments();
       } catch (error) {
         // 如果请求是因为组件卸载被取消，不需要向用户显示失败。
         if (error instanceof DOMException && error.name === "AbortError") {
@@ -78,6 +118,57 @@ function App() {
       controller.abort();
     };
   }, []);
+
+  async function loadDocuments() {
+    try {
+      // 文档列表接口从 SQLite 数据库读取记录，刷新页面后仍然应该返回历史上传记录。
+      const response = await fetch("/api/documents");
+
+      // HTTP 状态码不是 2xx 时，说明文档列表接口没有正常返回。
+      if (!response.ok) {
+        throw new Error(`文档列表加载失败，HTTP 状态码：${response.status}`);
+      }
+
+      const data = (await response.json()) as DocumentItem[];
+
+      setDocuments(data);
+      setDocumentsMessage(data.length > 0 ? "" : "还没有上传过 PDF slides。");
+    } catch (error) {
+      setDocuments([]);
+      setDocumentsMessage(
+        error instanceof Error ? error.message : "文档列表加载失败，请稍后重试。",
+      );
+    }
+  }
+
+  function formatCreatedAt(value: string) {
+    // 后端使用 ISO 时间字符串保存创建时间，前端转换为本地时间展示。
+    const date = new Date(value);
+
+    // 如果时间字符串无法解析，就直接显示原始值，避免页面报错。
+    if (Number.isNaN(date.getTime())) {
+      return value;
+    }
+
+    return date.toLocaleString();
+  }
+
+  function getStatusLabel(status: string) {
+    // 后端用英文状态值保存进数据库，前端把它转换成用户更容易理解的中文。
+    const statusLabels: Record<string, string> = {
+      uploaded: "已上传",
+      processing: "解析中",
+      ready: "解析完成",
+      failed: "解析失败",
+    };
+
+    return statusLabels[status] ?? status;
+  }
+
+  function isDocumentBusy(documentId: string) {
+    // 判断某个文档是否正在执行重命名或删除操作。
+    return documentActionState?.documentId === documentId;
+  }
 
   function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     // 浏览器文件选择控件会把用户选择的文件放在 files 列表中。
@@ -141,10 +232,97 @@ function App() {
 
       setUploadState("success");
       setUploadedDocumentId(data.document_id);
-      setUploadMessage(`上传成功：${data.filename}`);
+      setUploadMessage(`上传成功：${data.title}`);
+      await loadDocuments();
     } catch (error) {
       setUploadState("error");
       setUploadMessage(error instanceof Error ? error.message : "上传失败，请稍后重试。");
+    }
+  }
+
+  function startRename(document: DocumentItem) {
+    // 开始重命名时，把当前标题放进输入框，方便用户基于原标题修改。
+    setEditingDocumentId(document.document_id);
+    setEditingTitle(document.title);
+    setDocumentActionMessage("");
+  }
+
+  function cancelRename() {
+    // 取消编辑时清空编辑状态，不提交任何请求。
+    setEditingDocumentId(null);
+    setEditingTitle("");
+    setDocumentActionMessage("");
+  }
+
+  async function saveRename(documentId: string) {
+    const nextTitle = editingTitle.trim();
+
+    if (!nextTitle) {
+      setDocumentActionMessage("文档标题不能为空。");
+      return;
+    }
+
+    setDocumentActionState({ documentId, action: "renaming" });
+    setDocumentActionMessage("");
+
+    try {
+      const response = await fetch(`/api/documents/${documentId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ title: nextTitle }),
+      });
+
+      if (!response.ok) {
+        const errorData = (await response.json().catch(() => null)) as { detail?: string } | null;
+        throw new Error(errorData?.detail ?? `重命名失败，HTTP 状态码：${response.status}`);
+      }
+
+      setEditingDocumentId(null);
+      setEditingTitle("");
+      setDocumentActionMessage("文档标题已更新。");
+      await loadDocuments();
+    } catch (error) {
+      setDocumentActionMessage(error instanceof Error ? error.message : "重命名失败，请稍后重试。");
+    } finally {
+      setDocumentActionState(null);
+    }
+  }
+
+  async function deleteDocument(document: DocumentItem) {
+    // 删除是不可恢复操作，所以先用浏览器确认框向用户确认。
+    const confirmed = window.confirm(
+      `确定要删除“${document.title}”吗？这会同时删除数据库记录、页面记录和本地 PDF 文件。`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDocumentActionState({ documentId: document.document_id, action: "deleting" });
+    setDocumentActionMessage("");
+
+    try {
+      const response = await fetch(`/api/documents/${document.document_id}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const errorData = (await response.json().catch(() => null)) as { detail?: string } | null;
+        throw new Error(errorData?.detail ?? `删除失败，HTTP 状态码：${response.status}`);
+      }
+
+      if (editingDocumentId === document.document_id) {
+        cancelRename();
+      }
+
+      setDocumentActionMessage("文档已删除。");
+      await loadDocuments();
+    } catch (error) {
+      setDocumentActionMessage(error instanceof Error ? error.message : "删除失败，请稍后重试。");
+    } finally {
+      setDocumentActionState(null);
     }
   }
 
@@ -197,6 +375,109 @@ function App() {
             </div>
           ) : null}
         </form>
+
+        <section className="documents-panel">
+          <div>
+            <h2>已上传文档</h2>
+            <p>这些记录来自 SQLite 数据库，后端重启后仍然会保留。</p>
+          </div>
+
+          {documents.length > 0 ? (
+            <ul className="document-list">
+              {documents.map((document) => (
+                <li className="document-list-item" key={document.document_id}>
+                  <div className="document-header">
+                    {editingDocumentId === document.document_id ? (
+                      <div className="rename-form">
+                        <label>
+                          <span>新标题</span>
+                          <input
+                            value={editingTitle}
+                            onChange={(event) => setEditingTitle(event.target.value)}
+                            disabled={isDocumentBusy(document.document_id)}
+                          />
+                        </label>
+                        <div className="document-actions">
+                          <button
+                            type="button"
+                            onClick={() => saveRename(document.document_id)}
+                            disabled={isDocumentBusy(document.document_id)}
+                          >
+                            {documentActionState?.documentId === document.document_id &&
+                            documentActionState.action === "renaming"
+                              ? "保存中..."
+                              : "保存"}
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={cancelRename}
+                            disabled={isDocumentBusy(document.document_id)}
+                          >
+                            取消
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <strong>{document.title}</strong>
+                        <span>{formatCreatedAt(document.created_at)}</span>
+                      </div>
+                    )}
+                    <div className="document-actions">
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => startRename(document)}
+                        disabled={isDocumentBusy(document.document_id)}
+                      >
+                        重命名
+                      </button>
+                      <button
+                        type="button"
+                        className="danger-button"
+                        onClick={() => deleteDocument(document)}
+                        disabled={isDocumentBusy(document.document_id)}
+                      >
+                        {documentActionState?.documentId === document.document_id &&
+                        documentActionState.action === "deleting"
+                          ? "删除中..."
+                          : "删除"}
+                      </button>
+                    </div>
+                  </div>
+                  <dl>
+                    <div>
+                      <dt>document_id</dt>
+                      <dd>{document.document_id}</dd>
+                    </div>
+                    <div>
+                      <dt>状态</dt>
+                      <dd>
+                        <span className={`document-status document-status--${document.status}`}>
+                          {getStatusLabel(document.status)}
+                        </span>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>总页数</dt>
+                      <dd>{document.page_count}</dd>
+                    </div>
+                  </dl>
+                  {document.error_message ? (
+                    <p className="document-error">{document.error_message}</p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="documents-empty">{documentsMessage}</p>
+          )}
+
+          {documentActionMessage ? (
+            <p className="document-action-message">{documentActionMessage}</p>
+          ) : null}
+        </section>
       </section>
     </main>
   );
