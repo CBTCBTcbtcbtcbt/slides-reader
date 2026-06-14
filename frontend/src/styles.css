@@ -172,6 +172,136 @@ h1 {
   font-weight: 700;
 }
 
+.llm-config-panel {
+  display: grid;
+  gap: 16px;
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid #e1e7f0;
+}
+
+.llm-config-panel h2 {
+  margin: 0 0 6px;
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.llm-config-panel p {
+  margin: 0;
+  color: #647084;
+}
+
+.config-field {
+  display: grid;
+  gap: 8px;
+  color: #1f2a3d;
+  font-weight: 700;
+}
+
+.config-field span {
+  color: #50607a;
+  font-size: 13px;
+}
+
+.config-field input,
+.config-field textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #b8c5d9;
+  border-radius: 8px;
+  color: #1b1f2a;
+  background: #ffffff;
+}
+
+.config-field textarea {
+  min-height: 84px;
+  resize: vertical;
+}
+
+.config-field input:disabled,
+.config-field textarea:disabled {
+  background: #f1f4f8;
+  color: #6b7688;
+  cursor: not-allowed;
+}
+
+.config-checkbox {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  color: #2f466d;
+  font-weight: 700;
+}
+
+.config-checkbox input {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.config-checkbox span {
+  overflow-wrap: anywhere;
+}
+
+.llm-config-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.secondary-action-button {
+  min-width: 112px;
+  padding: 10px 16px;
+  border: 1px solid #c7d2e3;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #2f466d;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.secondary-action-button:disabled {
+  color: #6b7688;
+  background: #f1f4f8;
+  cursor: not-allowed;
+}
+
+.llm-config-message {
+  min-height: 24px;
+  color: #566172;
+}
+
+.llm-config-message--success {
+  color: #1f7a45;
+  font-weight: 700;
+}
+
+.llm-config-message--error {
+  color: #b42318;
+  font-weight: 700;
+}
+
+.llm-test-answer {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid #bfd0ee;
+  border-radius: 8px;
+  background: #f4f8ff;
+}
+
+.llm-test-answer span {
+  color: #50607a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.llm-test-answer p {
+  overflow-wrap: anywhere;
+  color: #1f2a3d;
+}
+
 .document-id-box {
   display: grid;
   gap: 6px;

@@ -4,6 +4,8 @@ type HealthState = "checking" | "success" | "error";
 
 type UploadState = "idle" | "uploading" | "success" | "error";
 
+type LLMConfigState = "idle" | "loading" | "saving" | "testing" | "success" | "error";
+
 type HealthResponse = {
   status: string;
   service: string;
@@ -35,6 +37,19 @@ type DocumentActionState = {
   documentId: string;
   action: "renaming" | "deleting";
 } | null;
+
+type LLMConfigResponse = {
+  base_url: string;
+  model: string;
+  timeout_seconds: number;
+  api_key_configured: boolean;
+  api_key_preview: string;
+};
+
+type LLMTestResponse = {
+  status: string;
+  answer: string;
+};
 
 function App() {
   // connectionState 用来记录当前前端连接后端的状态。
@@ -73,6 +88,39 @@ function App() {
   // documentActionMessage 用来展示重命名或删除操作的结果。
   const [documentActionMessage, setDocumentActionMessage] = useState("");
 
+  // llmConfigState 用来记录 LLM 配置加载、保存或测试的状态。
+  const [llmConfigState, setLlmConfigState] = useState<LLMConfigState>("idle");
+
+  // llmBaseUrl 用来保存用户在 WebUI 中编辑的 LLM 服务地址。
+  const [llmBaseUrl, setLlmBaseUrl] = useState("");
+
+  // llmApiKey 用来保存用户本次输入的新 API Key；为空时保存操作会保留旧值。
+  const [llmApiKey, setLlmApiKey] = useState("");
+
+  // llmApiKeyConfigured 表示后端当前是否已经保存过 API Key。
+  const [llmApiKeyConfigured, setLlmApiKeyConfigured] = useState(false);
+
+  // llmApiKeyPreview 用来显示后端返回的 API Key 掩码，避免把明文密钥发回前端。
+  const [llmApiKeyPreview, setLlmApiKeyPreview] = useState("");
+
+  // shouldClearLlmApiKey 用来让用户明确清空已经保存的 API Key。
+  const [shouldClearLlmApiKey, setShouldClearLlmApiKey] = useState(false);
+
+  // llmModel 用来保存用户选择或输入的模型名称。
+  const [llmModel, setLlmModel] = useState("");
+
+  // llmTimeoutSeconds 用来保存 LLM 请求超时时间。
+  const [llmTimeoutSeconds, setLlmTimeoutSeconds] = useState("60");
+
+  // llmConfigMessage 用来显示配置加载、保存和测试结果。
+  const [llmConfigMessage, setLlmConfigMessage] = useState("正在加载 LLM 配置...");
+
+  // llmTestPrompt 用来保存用户输入的测试提示词。
+  const [llmTestPrompt, setLlmTestPrompt] = useState("请用一句中文回复：LLM 配置测试成功。");
+
+  // llmTestAnswer 用来展示模型服务返回的测试回答。
+  const [llmTestAnswer, setLlmTestAnswer] = useState("");
+
   useEffect(() => {
     // 使用 AbortController 可以在组件卸载时取消请求，避免无意义的状态更新。
     const controller = new AbortController();
@@ -99,6 +147,7 @@ function App() {
 
         setConnectionState("success");
         setMessage(`后端连接成功：${data.service}`);
+        await loadLlmConfig();
         await loadDocuments();
       } catch (error) {
         // 如果请求是因为组件卸载被取消，不需要向用户显示失败。
@@ -138,6 +187,158 @@ function App() {
       setDocumentsMessage(
         error instanceof Error ? error.message : "文档列表加载失败，请稍后重试。",
       );
+    }
+  }
+
+  async function loadLlmConfig() {
+    setLlmConfigState("loading");
+    setLlmConfigMessage("正在加载 LLM 配置...");
+
+    try {
+      // LLM 配置接口会返回可展示配置，但不会返回 API Key 明文。
+      const response = await fetch("/api/llm/config");
+
+      if (!response.ok) {
+        throw new Error(`LLM 配置加载失败，HTTP 状态码：${response.status}`);
+      }
+
+      const data = (await response.json()) as LLMConfigResponse;
+
+      setLlmBaseUrl(data.base_url);
+      setLlmModel(data.model);
+      setLlmTimeoutSeconds(String(data.timeout_seconds));
+      setLlmApiKey("");
+      setShouldClearLlmApiKey(false);
+      setLlmApiKeyConfigured(data.api_key_configured);
+      setLlmApiKeyPreview(data.api_key_preview);
+      setLlmConfigState("idle");
+      setLlmConfigMessage(
+        data.api_key_configured
+          ? "LLM 配置已加载。API Key 已保存，输入新值才会覆盖。"
+          : "LLM 配置已加载。请填写 API Key 后保存。",
+      );
+    } catch (error) {
+      setLlmConfigState("error");
+      setLlmConfigMessage(
+        error instanceof Error ? error.message : "LLM 配置加载失败，请稍后重试。",
+      );
+    }
+  }
+
+  async function saveLlmConfig(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const nextBaseUrl = llmBaseUrl.trim();
+    const nextModel = llmModel.trim();
+    const nextTimeoutSeconds = Number(llmTimeoutSeconds);
+
+    if (!nextBaseUrl) {
+      setLlmConfigState("error");
+      setLlmConfigMessage("LLM_BASE_URL 不能为空。");
+      return;
+    }
+
+    if (!nextModel) {
+      setLlmConfigState("error");
+      setLlmConfigMessage("LLM_MODEL 不能为空。");
+      return;
+    }
+
+    if (!Number.isInteger(nextTimeoutSeconds) || nextTimeoutSeconds < 5 || nextTimeoutSeconds > 300) {
+      setLlmConfigState("error");
+      setLlmConfigMessage("请求超时时间必须是 5 到 300 之间的整数秒。");
+      return;
+    }
+
+    setLlmConfigState("saving");
+    setLlmConfigMessage("正在保存 LLM 配置...");
+    setLlmTestAnswer("");
+
+    try {
+      // 默认情况下，api_key 为空字符串时不发送该字段，后端会保留旧密钥。
+      // 当用户勾选清空密钥时，明确发送空字符串，让后端删除已保存的 API Key。
+      const requestBody: {
+        base_url: string;
+        model: string;
+        timeout_seconds: number;
+        api_key?: string;
+      } = {
+        base_url: nextBaseUrl,
+        model: nextModel,
+        timeout_seconds: nextTimeoutSeconds,
+      };
+
+      if (shouldClearLlmApiKey) {
+        requestBody.api_key = "";
+      } else if (llmApiKey.trim()) {
+        requestBody.api_key = llmApiKey.trim();
+      }
+
+      const response = await fetch("/api/llm/config", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        const errorData = (await response.json().catch(() => null)) as { detail?: string } | null;
+        throw new Error(errorData?.detail ?? `保存失败，HTTP 状态码：${response.status}`);
+      }
+
+      const data = (await response.json()) as LLMConfigResponse;
+
+      setLlmBaseUrl(data.base_url);
+      setLlmModel(data.model);
+      setLlmTimeoutSeconds(String(data.timeout_seconds));
+      setLlmApiKey("");
+      setShouldClearLlmApiKey(false);
+      setLlmApiKeyConfigured(data.api_key_configured);
+      setLlmApiKeyPreview(data.api_key_preview);
+      setLlmConfigState("success");
+      setLlmConfigMessage("LLM 配置已保存。");
+    } catch (error) {
+      setLlmConfigState("error");
+      setLlmConfigMessage(error instanceof Error ? error.message : "保存失败，请稍后重试。");
+    }
+  }
+
+  async function testLlmConfig() {
+    const prompt = llmTestPrompt.trim();
+
+    if (!prompt) {
+      setLlmConfigState("error");
+      setLlmConfigMessage("测试提示词不能为空。");
+      return;
+    }
+
+    setLlmConfigState("testing");
+    setLlmConfigMessage("正在请求 LLM 服务...");
+    setLlmTestAnswer("");
+
+    try {
+      const response = await fetch("/api/llm/test", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ prompt }),
+      });
+
+      if (!response.ok) {
+        const errorData = (await response.json().catch(() => null)) as { detail?: string } | null;
+        throw new Error(errorData?.detail ?? `测试失败，HTTP 状态码：${response.status}`);
+      }
+
+      const data = (await response.json()) as LLMTestResponse;
+
+      setLlmConfigState("success");
+      setLlmConfigMessage("LLM 测试请求成功。");
+      setLlmTestAnswer(data.answer);
+    } catch (error) {
+      setLlmConfigState("error");
+      setLlmConfigMessage(error instanceof Error ? error.message : "测试失败，请稍后重试。");
     }
   }
 
@@ -372,6 +573,118 @@ function App() {
             <div className="document-id-box">
               <span>document_id</span>
               <code>{uploadedDocumentId}</code>
+            </div>
+          ) : null}
+        </form>
+
+        <form className="llm-config-panel" onSubmit={saveLlmConfig}>
+          <div>
+            <h2>LLM 配置</h2>
+            <p>
+              LLM 是 Large Language Model，也就是“大语言模型”。这里配置
+              OpenAI-compatible API，用于后续生成课程简介、逐页讲稿和回答问题。
+            </p>
+          </div>
+
+          <label className="config-field">
+            <span>LLM_BASE_URL</span>
+            <input
+              value={llmBaseUrl}
+              onChange={(event) => setLlmBaseUrl(event.target.value)}
+              placeholder="https://api.openai.com/v1"
+              disabled={llmConfigState === "saving" || llmConfigState === "testing"}
+            />
+          </label>
+
+          <label className="config-field">
+            <span>LLM_API_KEY</span>
+            <input
+              value={llmApiKey}
+              onChange={(event) => setLlmApiKey(event.target.value)}
+              type="password"
+              placeholder={
+                llmApiKeyConfigured
+                  ? `已保存：${llmApiKeyPreview}，留空表示不修改`
+                  : "请输入 API Key"
+              }
+              disabled={
+                shouldClearLlmApiKey ||
+                llmConfigState === "saving" ||
+                llmConfigState === "testing"
+              }
+            />
+          </label>
+
+          <label className="config-checkbox">
+            <input
+              type="checkbox"
+              checked={shouldClearLlmApiKey}
+              onChange={(event) => {
+                setShouldClearLlmApiKey(event.target.checked);
+                if (event.target.checked) {
+                  setLlmApiKey("");
+                }
+              }}
+              disabled={llmConfigState === "saving" || llmConfigState === "testing"}
+            />
+            <span>清空已保存的 LLM_API_KEY</span>
+          </label>
+
+          <label className="config-field">
+            <span>LLM_MODEL</span>
+            <input
+              value={llmModel}
+              onChange={(event) => setLlmModel(event.target.value)}
+              placeholder="gpt-4.1-mini"
+              disabled={llmConfigState === "saving" || llmConfigState === "testing"}
+            />
+          </label>
+
+          <label className="config-field">
+            <span>请求超时时间（秒）</span>
+            <input
+              value={llmTimeoutSeconds}
+              onChange={(event) => setLlmTimeoutSeconds(event.target.value)}
+              inputMode="numeric"
+              disabled={llmConfigState === "saving" || llmConfigState === "testing"}
+            />
+          </label>
+
+          <label className="config-field">
+            <span>测试提示词</span>
+            <textarea
+              value={llmTestPrompt}
+              onChange={(event) => setLlmTestPrompt(event.target.value)}
+              disabled={llmConfigState === "saving" || llmConfigState === "testing"}
+            />
+          </label>
+
+          <div className="llm-config-actions">
+            <button
+              className="upload-button"
+              type="submit"
+              disabled={llmConfigState === "saving" || llmConfigState === "testing"}
+            >
+              {llmConfigState === "saving" ? "保存中..." : "保存配置"}
+            </button>
+            <button
+              type="button"
+              className="secondary-action-button"
+              onClick={testLlmConfig}
+              disabled={llmConfigState === "saving" || llmConfigState === "testing"}
+            >
+              {llmConfigState === "testing" ? "测试中..." : "测试连接"}
+            </button>
+          </div>
+
+          <div className={`llm-config-message llm-config-message--${llmConfigState}`}>
+            {llmConfigMessage}
+          </div>
+
+          {llmTestAnswer ? (
+            <div className="llm-test-answer">
+              <span>模型回答</span>
+              <p>{llmTestAnswer}</p>
             </div>
           ) : null}
         </form>

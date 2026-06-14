@@ -6,18 +6,26 @@
 3. 提供 `/api/health` 健康检查接口。
 4. 提供 PDF 文件上传接口，并把合法 PDF 保存到本地。
 5. 使用 SQLite 持久保存上传文档记录。
-6. 使用 PyMuPDF 解析 PDF 页数和每页文字。
+6. 使用 PyMuPDF 解析 PDF 页数、每页文字和每页截图。
+7. 提供可在 WebUI 修改的 LLM 配置，并封装统一 LLMClient。
 """
 
+import base64
+import json
 import sqlite3
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from os import getenv
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 import pymupdf
 from fastapi import FastAPI, File, HTTPException, Response, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 
@@ -34,8 +42,12 @@ DEFAULT_STORAGE_DIR = BASE_DIR.parent / "storage"
 STORAGE_DIR = Path(getenv("SLIDES_READER_STORAGE_DIR", str(DEFAULT_STORAGE_DIR))).resolve()
 
 # DOCUMENT_STORAGE_DIR 是 PDF 上传后的本地保存目录。
-# 当前任务会在保存原始 PDF 后同步解析页数和文字。
+# 当前任务会在保存原始 PDF 后同步解析页数、文字和页面截图。
 DOCUMENT_STORAGE_DIR = STORAGE_DIR / "documents"
+
+# PAGE_IMAGE_STORAGE_DIR 是页面截图的本地保存目录。
+# 每个 PDF 页面会渲染成一张 PNG 图片，供前端和后续 LLM 视觉输入使用。
+PAGE_IMAGE_STORAGE_DIR = STORAGE_DIR / "pages"
 
 # DATABASE_PATH 是 SQLite 数据库文件路径。
 # SQLite 是本地文件数据库，适合当前阶段的单用户本地应用。
@@ -59,6 +71,64 @@ class RenameDocumentRequest(BaseModel):
     """
 
     title: str
+
+
+class LLMConfigUpdateRequest(BaseModel):
+    """更新 LLM 配置的请求体。
+
+    属性：
+        base_url：OpenAI-compatible API 的服务地址。
+        api_key：模型服务密钥；为 None 时表示不修改旧密钥。
+        model：用于生成文本或图文回答的模型名称。
+        timeout_seconds：请求模型服务时最多等待的秒数。
+    """
+
+    base_url: str
+    api_key: str | None = None
+    model: str
+    timeout_seconds: int
+
+
+class LLMTestRequest(BaseModel):
+    """测试 LLM 文本调用的请求体。
+
+    属性：
+        prompt：用于测试模型连接的一小段提示词。
+    """
+
+    prompt: str = "请用一句中文回复：LLM 配置测试成功。"
+
+
+@dataclass(frozen=True)
+class LLMConfig:
+    """后端内部使用的 LLM 配置对象。
+
+    属性：
+        base_url：OpenAI-compatible API 的服务地址。
+        api_key：模型服务密钥。
+        model：使用的模型名称。
+        timeout_seconds：HTTP 请求超时时间，单位是秒。
+    """
+
+    base_url: str
+    api_key: str
+    model: str
+    timeout_seconds: int
+
+
+# LLM_DEFAULT_CONFIG 保存 LLM 配置的默认值。
+# 这些值会优先从环境变量读取，随后可以被 WebUI 写入的 SQLite 配置覆盖。
+LLM_DEFAULT_CONFIG = {
+    "base_url": getenv("LLM_BASE_URL", "https://api.openai.com/v1"),
+    "api_key": getenv("LLM_API_KEY", ""),
+    "model": getenv("LLM_MODEL", "gpt-4.1-mini"),
+    "timeout_seconds": getenv("LLM_TIMEOUT_SECONDS", "60"),
+}
+
+
+# LLM_CONFIG_KEYS 限定当前任务允许保存和读取的 LLM 配置项。
+# 后续如果新增温度、最大输出长度等配置，也应该先加入这里，再开放给 WebUI。
+LLM_CONFIG_KEYS = {"base_url", "api_key", "model", "timeout_seconds"}
 
 
 def init_database() -> None:
@@ -104,11 +174,29 @@ def init_database() -> None:
                 document_id TEXT NOT NULL,
                 page_number INTEGER NOT NULL,
                 text TEXT NOT NULL,
+                image_path TEXT,
                 status TEXT NOT NULL,
                 error_message TEXT,
                 created_at TEXT NOT NULL,
                 UNIQUE(document_id, page_number),
                 FOREIGN KEY(document_id) REFERENCES documents(id)
+            )
+            """
+        )
+        # 兼容任务 04 已经创建过的 pages 表。
+        # 任务 05 需要保存页面截图路径，因此旧数据库启动时要自动补充 image_path 字段。
+        page_columns = {row[1] for row in connection.execute("PRAGMA table_info(pages)").fetchall()}
+        if "image_path" not in page_columns:
+            connection.execute("ALTER TABLE pages ADD COLUMN image_path TEXT")
+
+        # app_settings 表用于保存可以通过 WebUI 修改的应用配置。
+        # 当前任务先保存 LLM 配置，后续新增配置也可以复用这个 key-value 表。
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             )
             """
         )
@@ -125,6 +213,365 @@ def get_database_connection() -> sqlite3.Connection:
     connection = sqlite3.connect(DATABASE_PATH)
     connection.row_factory = sqlite3.Row
     return connection
+
+
+def read_app_settings() -> dict[str, str]:
+    """读取应用配置表中的所有配置。
+
+    返回值：
+        dict[str, str]：以配置 key 为键、配置 value 为值的字典。
+    """
+
+    # 每次读取前确保表存在，避免测试或脚本直接调用配置接口时还没初始化数据库。
+    init_database()
+
+    with get_database_connection() as connection:
+        rows = connection.execute("SELECT key, value FROM app_settings").fetchall()
+
+    # SQLite 返回的是行对象，这里转换成普通字典，后续合并默认值更方便。
+    return {row["key"]: row["value"] for row in rows}
+
+
+def write_app_settings(next_settings: dict[str, str]) -> None:
+    """把应用配置写入 app_settings 表。
+
+    参数：
+        next_settings：要写入的配置字典，key 必须是允许保存的配置项。
+
+    返回值：
+        None：这个函数只负责写数据库。
+    """
+
+    # 统一使用 UTC 时间记录更新时间，便于后续排查配置什么时候被修改。
+    updated_at = datetime.now(UTC).isoformat()
+
+    init_database()
+
+    with get_database_connection() as connection:
+        for key, value in next_settings.items():
+            if key not in LLM_CONFIG_KEYS:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"不支持的配置项：{key}",
+                )
+
+            connection.execute(
+                """
+                INSERT INTO app_settings (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = excluded.updated_at
+                """,
+                (key, value, updated_at),
+            )
+        connection.commit()
+
+
+def mask_secret(secret: str) -> str:
+    """把密钥转换成前端可展示的掩码字符串。
+
+    参数：
+        secret：真实密钥字符串。
+
+    返回值：
+        str：不泄露完整密钥的掩码字符串。
+    """
+
+    # 没有配置密钥时返回空字符串，前端可以据此提示用户还没有配置。
+    if not secret:
+        return ""
+
+    # 很短的密钥不展示首尾字符，避免掩码本身泄露太多信息。
+    if len(secret) <= 8:
+        return "********"
+
+    # 较长密钥只展示开头和结尾，中间用星号代替。
+    return f"{secret[:4]}{'*' * 8}{secret[-4:]}"
+
+
+def normalize_base_url(base_url: str) -> str:
+    """规范化 LLM 服务地址。
+
+    参数：
+        base_url：用户输入的 OpenAI-compatible API 服务地址。
+
+    返回值：
+        str：去掉首尾空白和末尾斜杠后的地址。
+    """
+
+    # 只做最小规范化，不强行补协议，避免把用户输入的错误地址悄悄变成另一个地址。
+    return base_url.strip().rstrip("/")
+
+
+def normalize_timeout_seconds(timeout_seconds: int | str) -> int:
+    """校验并转换 LLM 请求超时时间。
+
+    参数：
+        timeout_seconds：用户或环境变量提供的超时时间。
+
+    返回值：
+        int：合法的超时时间，单位是秒。
+    """
+
+    try:
+        normalized_timeout = int(timeout_seconds)
+    except (TypeError, ValueError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="LLM 请求超时时间必须是整数秒。",
+        ) from error
+
+    # 设置合理边界，避免用户填 0 导致请求立刻失败，或填特别大导致后端长时间卡住。
+    if normalized_timeout < 5 or normalized_timeout > 300:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="LLM 请求超时时间必须在 5 到 300 秒之间。",
+        )
+
+    return normalized_timeout
+
+
+def get_llm_config() -> LLMConfig:
+    """读取最终生效的 LLM 配置。
+
+    返回值：
+        LLMConfig：合并环境变量默认值和 WebUI 保存值后的配置对象。
+    """
+
+    # 默认值来自环境变量，数据库配置来自 WebUI；数据库配置优先级更高。
+    stored_settings = read_app_settings()
+    merged_settings = {**LLM_DEFAULT_CONFIG, **stored_settings}
+
+    return LLMConfig(
+        base_url=normalize_base_url(merged_settings["base_url"]),
+        api_key=merged_settings["api_key"],
+        model=merged_settings["model"].strip(),
+        timeout_seconds=normalize_timeout_seconds(merged_settings["timeout_seconds"]),
+    )
+
+
+def serialize_llm_config(config: LLMConfig) -> dict[str, str | int | bool]:
+    """把 LLM 配置转换成可以返回给前端的字典。
+
+    参数：
+        config：后端内部使用的 LLM 配置对象。
+
+    返回值：
+        dict[str, str | int | bool]：隐藏真实 API Key 后的配置数据。
+    """
+
+    return {
+        "base_url": config.base_url,
+        "model": config.model,
+        "timeout_seconds": config.timeout_seconds,
+        "api_key_configured": bool(config.api_key),
+        "api_key_preview": mask_secret(config.api_key),
+    }
+
+
+def validate_llm_config(config: LLMConfig) -> None:
+    """校验 LLM 配置是否足够发起请求。
+
+    参数：
+        config：需要校验的 LLM 配置。
+
+    返回值：
+        None：配置合法时不返回数据；配置缺失时抛出 HTTPException。
+    """
+
+    if not config.base_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="请先配置 LLM_BASE_URL。",
+        )
+
+    if not config.api_key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="请先配置 LLM_API_KEY。",
+        )
+
+    if not config.model:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="请先配置 LLM_MODEL。",
+        )
+
+
+def build_chat_completions_url(base_url: str) -> str:
+    """根据 base_url 生成 OpenAI-compatible 的 chat completions 请求地址。
+
+    参数：
+        base_url：用户配置的模型服务基础地址。
+
+    返回值：
+        str：最终请求地址。
+    """
+
+    # 如果用户已经填到了 /chat/completions，就直接使用，兼容少数只暴露完整路径的服务。
+    if base_url.endswith("/chat/completions"):
+        return base_url
+
+    # 常见 OpenAI-compatible 服务会把 base_url 配成 https://host/v1。
+    return f"{base_url}/chat/completions"
+
+
+def encode_image_as_data_url(image_path: Path) -> str:
+    """把本地图片转换成 LLM 视觉接口常用的 data URL。
+
+    参数：
+        image_path：本地图片路径。
+
+    返回值：
+        str：形如 data:image/png;base64,... 的图片文本。
+    """
+
+    # 任务 05 生成的是 PNG，所以这里固定使用 image/png。
+    encoded_image = base64.b64encode(image_path.read_bytes()).decode("ascii")
+    return f"data:image/png;base64,{encoded_image}"
+
+
+class LLMClient:
+    """统一封装 OpenAI-compatible LLM 调用。
+
+    这个类负责把项目内部的文本和图片输入转换成模型服务需要的 HTTP 请求。
+    后续课程简介、逐页讲稿和当前页问答都应该调用这个类，而不是直接写请求逻辑。
+    """
+
+    def __init__(self, config: LLMConfig):
+        """创建 LLMClient 实例。
+
+        参数：
+            config：当前生效的 LLM 配置。
+        """
+
+        self.config = config
+
+    def complete_text(self, prompt: str) -> str:
+        """发送纯文本提示词并返回模型文本回答。
+
+        参数：
+            prompt：要发送给模型的用户提示词。
+
+        返回值：
+            str：模型返回的文本内容。
+        """
+
+        messages = [
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        ]
+        return self._send_chat_completion(messages)
+
+    def complete_with_image(self, prompt: str, image_path: Path) -> str:
+        """发送文本加页面截图，并返回模型文本回答。
+
+        参数：
+            prompt：要发送给模型的文字提示词。
+            image_path：要发送给模型的本地 PNG 截图路径。
+
+        返回值：
+            str：模型返回的文本内容。
+        """
+
+        # OpenAI-compatible 视觉请求通常把 content 写成多个片段：文本片段和图片片段。
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": prompt,
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": encode_image_as_data_url(image_path),
+                        },
+                    },
+                ],
+            }
+        ]
+        return self._send_chat_completion(messages)
+
+    def _send_chat_completion(self, messages: list[dict[str, Any]]) -> str:
+        """向 OpenAI-compatible chat completions 接口发送请求。
+
+        参数：
+            messages：符合 chat completions 格式的消息列表。
+
+        返回值：
+            str：模型返回的第一条文本回答。
+        """
+
+        validate_llm_config(self.config)
+
+        payload = {
+            "model": self.config.model,
+            "messages": messages,
+        }
+        request_body = json.dumps(payload).encode("utf-8")
+
+        request = urllib.request.Request(
+            url=build_chat_completions_url(self.config.base_url),
+            data=request_body,
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {self.config.api_key}",
+                # Accept 明确告诉模型服务，客户端期望收到 JSON 格式响应。
+                # 一些 OpenAI-compatible 服务前面有网关或 WAF，缺少常见请求头时可能被误拦截。
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                # User-Agent 用来标识当前客户端。MicuAPI 等服务可能会拒绝没有正常
+                # User-Agent 的 Python 默认请求，并返回 HTTP 403 / error code 1010。
+                "User-Agent": "SlidesReader/0.1 (+OpenAI-compatible client)",
+            },
+        )
+
+        try:
+            with urllib.request.urlopen(
+                request,
+                timeout=self.config.timeout_seconds,
+            ) as response:
+                response_body = response.read().decode("utf-8")
+        except urllib.error.HTTPError as error:
+            # HTTPError 代表服务端返回了 4xx 或 5xx，尽量读取响应体给用户更明确的错误。
+            error_body = error.read().decode("utf-8", errors="replace")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"LLM 服务返回错误：HTTP {error.code}，{error_body}",
+            ) from error
+        except urllib.error.URLError as error:
+            # URLError 通常代表网络不可达、域名错误或连接失败。
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"无法连接 LLM 服务：{error.reason}",
+            ) from error
+        except TimeoutError as error:
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="LLM 请求超时，请检查服务地址或调大超时时间。",
+            ) from error
+
+        try:
+            data = json.loads(response_body)
+            content = data["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"LLM 服务返回格式不符合 OpenAI-compatible chat completions：{response_body}",
+            ) from error
+
+        if not isinstance(content, str) or not content.strip():
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="LLM 服务返回了空回答。",
+            )
+
+        return content
 
 
 def row_to_document(row: sqlite3.Row) -> dict[str, str | int | None]:
@@ -149,6 +596,21 @@ def row_to_document(row: sqlite3.Row) -> dict[str, str | int | None]:
     }
 
 
+def build_page_image_url(document_id: str, page_number: int) -> str:
+    """生成页面截图的后端访问 URL。
+
+    参数：
+        document_id：页面所属文档 ID。
+        page_number：从 1 开始的页码。
+
+    返回值：
+        str：前端或浏览器可以直接访问的页面截图接口路径。
+    """
+
+    # 只返回相对 API 路径，前端可以通过 Vite 代理或同源部署访问，不需要写死后端域名。
+    return f"/api/documents/{document_id}/pages/{page_number}/image"
+
+
 def row_to_page(row: sqlite3.Row) -> dict[str, str | int | None]:
     """把 SQLite 查询结果转换成页面字典。
 
@@ -156,8 +618,11 @@ def row_to_page(row: sqlite3.Row) -> dict[str, str | int | None]:
         row：SQLite 查询返回的一行 Page 数据。
 
     返回值：
-        dict[str, str | int | None]：包含页面 ID、页码、文字、状态、错误信息和创建时间。
+        dict[str, str | int | None]：包含页面 ID、页码、文字、截图信息、状态、错误信息和创建时间。
     """
+
+    # image_path 是本地文件路径，image_url 是前端更适合使用的 HTTP 访问入口。
+    image_path = row["image_path"]
 
     # 页面文字可能很长，但当前任务需要返回它，方便前端或后续任务验证解析结果。
     return {
@@ -165,6 +630,12 @@ def row_to_page(row: sqlite3.Row) -> dict[str, str | int | None]:
         "document_id": row["document_id"],
         "page_number": row["page_number"],
         "text": row["text"],
+        "image_path": image_path,
+        "image_url": (
+            build_page_image_url(row["document_id"], row["page_number"])
+            if image_path
+            else None
+        ),
         "status": row["status"],
         "error_message": row["error_message"],
         "created_at": row["created_at"],
@@ -243,6 +714,42 @@ def ensure_document_file_is_safe(file_path: Path) -> None:
         ) from error
 
 
+def resolve_page_image_path(image_path: str) -> Path:
+    """把数据库中的截图路径解析为本地 PNG 路径。
+
+    参数：
+        image_path：pages.image_path 中保存的路径字符串。
+
+    返回值：
+        Path：解析后的绝对路径。
+    """
+
+    # resolve 会把路径转换成绝对路径，后续才能可靠判断它是否位于 storage/pages 内。
+    return Path(image_path).resolve()
+
+
+def ensure_page_image_file_is_safe(image_path: Path) -> None:
+    """确认页面截图文件位于 PAGE_IMAGE_STORAGE_DIR 内。
+
+    参数：
+        image_path：准备读取或删除的页面截图绝对路径。
+
+    返回值：
+        None：路径安全时不返回数据，路径不安全时直接抛出 HTTPException。
+    """
+
+    # 图片接口会读取本地文件，删除文档也会删除截图；两种场景都必须做目录边界检查。
+    storage_root = PAGE_IMAGE_STORAGE_DIR.resolve()
+
+    try:
+        image_path.relative_to(storage_root)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="页面截图路径不在允许访问的 storage/pages 目录内，已拒绝操作。",
+        ) from error
+
+
 def update_document_status(
     document_id: str,
     document_status: str,
@@ -276,6 +783,7 @@ def create_page_record(
     document_id: str,
     page_number: int,
     text: str,
+    image_path: Path | None,
     page_status: str,
     error_message: str | None = None,
 ) -> None:
@@ -285,6 +793,7 @@ def create_page_record(
         document_id：页面所属文档 ID。
         page_number：从 1 开始的页码。
         text：当前页提取出的文字；空白页使用空字符串。
+        image_path：当前页 PNG 截图路径；截图失败时使用 None。
         page_status：页面解析状态，例如 ready 或 failed。
         error_message：单页解析失败时保存的错误信息。
 
@@ -300,15 +809,16 @@ def create_page_record(
         connection.execute(
             """
             INSERT OR REPLACE INTO pages (
-                id, document_id, page_number, text, status, error_message, created_at
+                id, document_id, page_number, text, image_path, status, error_message, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 page_id,
                 document_id,
                 page_number,
                 text,
+                str(image_path) if image_path is not None else None,
                 page_status,
                 error_message,
                 created_at,
@@ -317,15 +827,60 @@ def create_page_record(
         connection.commit()
 
 
+def build_page_image_path(document_id: str, page_number: int) -> Path:
+    """生成某一页截图应保存到的本地路径。
+
+    参数：
+        document_id：页面所属文档 ID。
+        page_number：从 1 开始的页码。
+
+    返回值：
+        Path：当前页 PNG 截图的目标保存路径。
+    """
+
+    # 文件名同时包含文档 ID 和页码，可以避免不同 PDF 的同页图片互相覆盖。
+    return PAGE_IMAGE_STORAGE_DIR / f"{document_id}-page-{page_number}.png"
+
+
+def render_page_image(page: pymupdf.Page, document_id: str, page_number: int) -> Path:
+    """把 PDF 单页渲染成 PNG 图片并保存到本地。
+
+    参数：
+        page：PyMuPDF 读取出的单页对象。
+        document_id：页面所属文档 ID。
+        page_number：从 1 开始的页码。
+
+    返回值：
+        Path：保存成功后的 PNG 图片路径。
+    """
+
+    # 确保截图目录存在；parents=True 表示父目录不存在时一起创建。
+    PAGE_IMAGE_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Matrix(2, 2) 表示横向和纵向都放大 2 倍渲染，第一版在清晰度和体积之间取中等值。
+    render_matrix = pymupdf.Matrix(2, 2)
+
+    # get_pixmap 会把 PDF 页面渲染成内存里的像素图，随后可以保存为 PNG。
+    pixmap = page.get_pixmap(matrix=render_matrix)
+
+    # 目标文件名由 document_id 和页码决定，保证页面截图和 PDF 页码一一对应。
+    image_path = build_page_image_path(document_id=document_id, page_number=page_number)
+
+    # save 会把像素图写成 PNG 文件；PyMuPDF 会根据后缀识别保存格式。
+    pixmap.save(image_path)
+
+    return image_path
+
+
 def parse_pdf_pages(document_id: str, saved_path: Path) -> None:
-    """解析 PDF 页数和每页文字，并写入 pages 表。
+    """解析 PDF 页数、每页文字和每页截图，并写入 pages 表。
 
     参数：
         document_id：当前 PDF 对应的文档 ID。
         saved_path：已经保存到本地的 PDF 文件路径。
 
     返回值：
-        None：解析结果会直接写入 SQLite。
+        None：解析结果和截图路径会直接写入 SQLite。
     """
 
     # 如果 PDF 文件损坏或不是合法 PDF，pymupdf.open 会抛出异常。
@@ -340,21 +895,32 @@ def parse_pdf_pages(document_id: str, saved_path: Path) -> None:
                     # get_text("text", sort=True) 会按阅读顺序尽量提取页面文字。
                     # 空白页会得到空字符串，但仍然需要创建页面记录。
                     page_text = page.get_text("text", sort=True)
+
+                    # 页面截图会供前端直接展示，也会供后续 LLM 视觉理解图表、公式和排版。
+                    image_path = render_page_image(
+                        page=page,
+                        document_id=document_id,
+                        page_number=page_number,
+                    )
+
                     create_page_record(
                         document_id=document_id,
                         page_number=page_number,
                         text=page_text,
+                        image_path=image_path,
                         page_status="ready",
                     )
                 except Exception as error:
                     # 单页失败时仍然写入记录，避免页面数量和 PDF 实际页码不一致。
+                    # 这里把文字和截图放在同一个页级处理块里，保证任一环节失败都会被清楚标记。
                     has_page_error = True
-                    error_message = f"第 {page_number} 页解析失败：{error}"
+                    error_message = f"第 {page_number} 页解析或截图生成失败：{error}"
                     page_error_messages.append(error_message)
                     create_page_record(
                         document_id=document_id,
                         page_number=page_number,
                         text="",
+                        image_path=None,
                         page_status="failed",
                         error_message=error_message,
                     )
@@ -479,7 +1045,15 @@ def list_document_pages(document_id: str) -> list[dict[str, str | int | None]]:
 
         rows = connection.execute(
             """
-            SELECT id, document_id, page_number, text, status, error_message, created_at
+            SELECT
+                id,
+                document_id,
+                page_number,
+                text,
+                image_path,
+                status,
+                error_message,
+                created_at
             FROM pages
             WHERE document_id = ?
             ORDER BY page_number ASC
@@ -488,6 +1062,161 @@ def list_document_pages(document_id: str) -> list[dict[str, str | int | None]]:
         ).fetchall()
 
     return [row_to_page(row) for row in rows]
+
+
+@app.get("/api/documents/{document_id}/pages/{page_number}/image")
+def read_page_image(document_id: str, page_number: int) -> FileResponse:
+    """返回某个文档某一页的 PNG 截图。
+
+    参数：
+        document_id：需要读取截图的文档 ID。
+        page_number：从 1 开始的页码。
+
+    返回值：
+        FileResponse：找到截图时直接返回 PNG 文件内容。
+    """
+
+    # 页码从用户视角必须从 1 开始，0 或负数没有对应的 PDF 页面。
+    if page_number < 1:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="没有找到对应的页面。",
+        )
+
+    init_database()
+
+    with get_database_connection() as connection:
+        document = connection.execute(
+            "SELECT id FROM documents WHERE id = ?",
+            (document_id,),
+        ).fetchone()
+
+        # 文档不存在时先返回文档级 404，避免把不存在文档误判成图片丢失。
+        if document is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="没有找到对应的文档。",
+            )
+
+        page = connection.execute(
+            """
+            SELECT image_path
+            FROM pages
+            WHERE document_id = ? AND page_number = ?
+            """,
+            (document_id, page_number),
+        ).fetchone()
+
+    if page is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="没有找到对应的页面。",
+        )
+
+    if not page["image_path"]:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="当前页面还没有生成截图。",
+        )
+
+    image_path = resolve_page_image_path(page["image_path"])
+    ensure_page_image_file_is_safe(image_path)
+
+    if not image_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="页面截图文件不存在，可能已被手动删除。",
+        )
+
+    # FileResponse 会让 FastAPI 直接读取并返回静态文件，适合图片、PDF 这类本地文件。
+    return FileResponse(
+        path=image_path,
+        media_type="image/png",
+        filename=image_path.name,
+    )
+
+
+@app.get("/api/llm/config")
+def read_llm_config() -> dict[str, str | int | bool]:
+    """返回当前 LLM 配置，供前端 WebUI 展示。
+
+    返回值：
+        dict[str, str | int | bool]：不包含明文 API Key 的 LLM 配置。
+    """
+
+    # API Key 属于敏感信息，只返回是否已配置和掩码，不把明文发回浏览器。
+    return serialize_llm_config(get_llm_config())
+
+
+@app.patch("/api/llm/config")
+def update_llm_config(request: LLMConfigUpdateRequest) -> dict[str, str | int | bool]:
+    """保存用户从 WebUI 修改的 LLM 配置。
+
+    参数：
+        request：前端提交的新配置。
+
+    返回值：
+        dict[str, str | int | bool]：保存后的配置，API Key 仍然只返回掩码。
+    """
+
+    # base_url 和 model 是发起请求必须使用的普通配置，允许用户随时覆盖。
+    base_url = normalize_base_url(request.base_url)
+    model = request.model.strip()
+    timeout_seconds = normalize_timeout_seconds(request.timeout_seconds)
+
+    if not base_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="LLM_BASE_URL 不能为空。",
+        )
+
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="LLM_MODEL 不能为空。",
+        )
+
+    next_settings = {
+        "base_url": base_url,
+        "model": model,
+        "timeout_seconds": str(timeout_seconds),
+    }
+
+    # api_key 为 None 表示前端没有提交新密钥，要保留旧密钥。
+    # api_key 为空字符串表示用户明确清空密钥。
+    if request.api_key is not None:
+        next_settings["api_key"] = request.api_key.strip()
+
+    write_app_settings(next_settings)
+
+    return serialize_llm_config(get_llm_config())
+
+
+@app.post("/api/llm/test")
+def test_llm_config(request: LLMTestRequest) -> dict[str, str]:
+    """使用当前配置向 LLM 发起一次文本测试请求。
+
+    参数：
+        request：包含测试提示词的请求体。
+
+    返回值：
+        dict[str, str]：模型返回的测试回答。
+    """
+
+    prompt = request.prompt.strip()
+    if not prompt:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="测试提示词不能为空。",
+        )
+
+    client = LLMClient(get_llm_config())
+    answer = client.complete_text(prompt)
+
+    return {
+        "status": "ok",
+        "answer": answer,
+    }
 
 
 @app.patch("/api/documents/{document_id}")
@@ -545,7 +1274,7 @@ def rename_document(
 
 @app.delete("/api/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_document(document_id: str) -> Response:
-    """删除文档记录、页面记录和本地 PDF 文件。
+    """删除文档记录、页面记录、本地 PDF 文件和页面截图文件。
 
     参数：
         document_id：需要删除的文档 ID。
@@ -568,10 +1297,28 @@ def delete_document(document_id: str) -> Response:
                 detail="没有找到对应的文档。",
             )
 
-        # 删除数据库记录前先计算文件路径并完成安全检查。
+        # 删除数据库记录前先计算 PDF 文件路径并完成安全检查。
         # 这样一旦路径异常，不会出现数据库已删但文件未处理的状态。
         document_file_path = resolve_document_file_path(document["file_path"])
         ensure_document_file_is_safe(document_file_path)
+
+        page_image_rows = connection.execute(
+            """
+            SELECT image_path
+            FROM pages
+            WHERE document_id = ? AND image_path IS NOT NULL
+            """,
+            (document_id,),
+        ).fetchall()
+
+        # 截图路径同样来自数据库，删除前需要逐个做目录边界检查。
+        page_image_paths = [
+            resolve_page_image_path(row["image_path"])
+            for row in page_image_rows
+            if row["image_path"]
+        ]
+        for page_image_path in page_image_paths:
+            ensure_page_image_file_is_safe(page_image_path)
 
         # 先删子表 pages，再删主表 documents，避免留下孤立页面记录。
         connection.execute("DELETE FROM pages WHERE document_id = ?", (document_id,))
@@ -587,6 +1334,17 @@ def delete_document(document_id: str) -> Response:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"数据库记录已删除，但本地 PDF 文件删除失败：{error}",
             ) from error
+
+    # 页面截图和原始 PDF 一样属于运行数据；如果文件已不存在，删除接口仍然算成功。
+    for page_image_path in page_image_paths:
+        if page_image_path.exists():
+            try:
+                page_image_path.unlink()
+            except OSError as error:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"数据库记录已删除，但页面截图删除失败：{error}",
+                ) from error
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -643,7 +1401,7 @@ async def upload_document(file: UploadFile = File(...)) -> dict[str, str | int |
     saved_path = DOCUMENT_STORAGE_DIR / saved_filename
 
     # 读取上传内容并写入本地文件。
-    # 当前任务只验证保存能力，所以不在这里解析 PDF。
+    # 文件写入成功后，后续步骤会继续解析 PDF 并渲染每一页截图。
     file_bytes = await file.read()
     saved_path.write_bytes(file_bytes)
 
@@ -674,8 +1432,8 @@ async def upload_document(file: UploadFile = File(...)) -> dict[str, str | int |
         )
         connection.commit()
 
-    # 同步解析 PDF 页数和文字。
-    # 任务 04 暂不使用后台任务，后续 LLM 生成阶段再引入后台处理。
+    # 同步解析 PDF 页数、文字和页面截图。
+    # 任务 05 暂不使用后台任务，后续 LLM 生成阶段再引入后台处理。
     parse_pdf_pages(document_id=document_id, saved_path=saved_path)
 
     # 解析后重新读取文档记录和页数，保证接口返回的是最终状态。
