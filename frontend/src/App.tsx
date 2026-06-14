@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type HealthState = "checking" | "success" | "error";
 
@@ -20,6 +20,9 @@ type UploadResponse = {
   status: string;
   page_count: number;
   error_message: string | null;
+  course_summary: string | null;
+  course_summary_status: string;
+  course_summary_error: string | null;
   created_at: string;
 };
 
@@ -30,18 +33,39 @@ type DocumentItem = {
   status: string;
   page_count: number;
   error_message: string | null;
+  course_summary: string | null;
+  course_summary_status: string;
+  course_summary_error: string | null;
+  created_at: string;
+};
+
+type PageItem = {
+  page_id: string;
+  document_id: string;
+  page_number: number;
+  text: string;
+  image_path: string | null;
+  image_url: string | null;
+  status: string;
+  error_message: string | null;
+  lecture_notes: string | null;
+  lecture_notes_status: string;
+  lecture_notes_error: string | null;
   created_at: string;
 };
 
 type DocumentActionState = {
   documentId: string;
-  action: "renaming" | "deleting";
+  pageNumber?: number;
+  action: "renaming" | "deleting" | "regeneratingSummary" | "regeneratingLectureNotes";
 } | null;
 
 type LLMConfigResponse = {
   base_url: string;
   model: string;
   timeout_seconds: number;
+  course_summary_prompt: string;
+  lecture_notes_prompt: string;
   api_key_configured: boolean;
   api_key_preview: string;
 };
@@ -112,6 +136,35 @@ function App() {
   // llmTimeoutSeconds 用来保存 LLM 请求超时时间。
   const [llmTimeoutSeconds, setLlmTimeoutSeconds] = useState("60");
 
+  // courseSummaryPrompt 用来保存生成课程简介时发送给 LLM 的 prompt。
+  const [courseSummaryPrompt, setCourseSummaryPrompt] = useState("");
+
+  // lectureNotesPrompt 用来保存生成逐页讲稿时发送给 LLM 的 prompt。
+  const [lectureNotesPrompt, setLectureNotesPrompt] = useState("");
+
+  // isCourseSummaryPromptExpanded 用来控制课程简介 prompt 设置是否展开显示。
+  const [isCourseSummaryPromptExpanded, setIsCourseSummaryPromptExpanded] = useState(false);
+
+  // isLectureNotesPromptExpanded 用来控制逐页讲稿 prompt 设置是否展开显示。
+  const [isLectureNotesPromptExpanded, setIsLectureNotesPromptExpanded] = useState(false);
+
+  // courseSummaryPromptTextareaRef 用来访问 prompt 文本框的真实 DOM 高度。
+  const courseSummaryPromptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // lectureNotesPromptTextareaRef 用来访问逐页讲稿 prompt 文本框的真实 DOM 高度。
+  const lectureNotesPromptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // expandedLectureNotesDocumentId 用来记录当前展开页面讲稿列表的文档。
+  const [expandedLectureNotesDocumentId, setExpandedLectureNotesDocumentId] = useState<
+    string | null
+  >(null);
+
+  // pagesByDocument 用来按 document_id 缓存页面和讲稿数据。
+  const [pagesByDocument, setPagesByDocument] = useState<Record<string, PageItem[]>>({});
+
+  // pagesMessageByDocument 用来按 document_id 展示页面讲稿加载状态或错误。
+  const [pagesMessageByDocument, setPagesMessageByDocument] = useState<Record<string, string>>({});
+
   // llmConfigMessage 用来显示配置加载、保存和测试结果。
   const [llmConfigMessage, setLlmConfigMessage] = useState("正在加载 LLM 配置...");
 
@@ -168,6 +221,35 @@ function App() {
     };
   }, []);
 
+  function resizePromptTextarea(textarea: HTMLTextAreaElement | null) {
+    // prompt 展开后需要让 textarea 高度跟随完整内容，避免文本框内部出现滚动条。
+    if (textarea === null) {
+      return;
+    }
+
+    // 先重置为 auto，让浏览器重新计算 scrollHeight，随后把高度设为完整内容高度。
+    textarea.style.height = "auto";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }
+
+  useEffect(() => {
+    // 折叠状态下 textarea 不存在，不需要计算课程简介 prompt 高度。
+    if (!isCourseSummaryPromptExpanded) {
+      return;
+    }
+
+    resizePromptTextarea(courseSummaryPromptTextareaRef.current);
+  }, [courseSummaryPrompt, isCourseSummaryPromptExpanded]);
+
+  useEffect(() => {
+    // 折叠状态下 textarea 不存在，不需要计算逐页讲稿 prompt 高度。
+    if (!isLectureNotesPromptExpanded) {
+      return;
+    }
+
+    resizePromptTextarea(lectureNotesPromptTextareaRef.current);
+  }, [lectureNotesPrompt, isLectureNotesPromptExpanded]);
+
   async function loadDocuments() {
     try {
       // 文档列表接口从 SQLite 数据库读取记录，刷新页面后仍然应该返回历史上传记录。
@@ -207,6 +289,8 @@ function App() {
       setLlmBaseUrl(data.base_url);
       setLlmModel(data.model);
       setLlmTimeoutSeconds(String(data.timeout_seconds));
+      setCourseSummaryPrompt(data.course_summary_prompt);
+      setLectureNotesPrompt(data.lecture_notes_prompt);
       setLlmApiKey("");
       setShouldClearLlmApiKey(false);
       setLlmApiKeyConfigured(data.api_key_configured);
@@ -231,6 +315,8 @@ function App() {
     const nextBaseUrl = llmBaseUrl.trim();
     const nextModel = llmModel.trim();
     const nextTimeoutSeconds = Number(llmTimeoutSeconds);
+    const nextCourseSummaryPrompt = courseSummaryPrompt.trim();
+    const nextLectureNotesPrompt = lectureNotesPrompt.trim();
 
     if (!nextBaseUrl) {
       setLlmConfigState("error");
@@ -250,6 +336,18 @@ function App() {
       return;
     }
 
+    if (!nextCourseSummaryPrompt) {
+      setLlmConfigState("error");
+      setLlmConfigMessage("课程简介 prompt 不能为空。");
+      return;
+    }
+
+    if (!nextLectureNotesPrompt) {
+      setLlmConfigState("error");
+      setLlmConfigMessage("逐页讲稿 prompt 不能为空。");
+      return;
+    }
+
     setLlmConfigState("saving");
     setLlmConfigMessage("正在保存 LLM 配置...");
     setLlmTestAnswer("");
@@ -261,11 +359,15 @@ function App() {
         base_url: string;
         model: string;
         timeout_seconds: number;
+        course_summary_prompt: string;
+        lecture_notes_prompt: string;
         api_key?: string;
       } = {
         base_url: nextBaseUrl,
         model: nextModel,
         timeout_seconds: nextTimeoutSeconds,
+        course_summary_prompt: nextCourseSummaryPrompt,
+        lecture_notes_prompt: nextLectureNotesPrompt,
       };
 
       if (shouldClearLlmApiKey) {
@@ -292,6 +394,8 @@ function App() {
       setLlmBaseUrl(data.base_url);
       setLlmModel(data.model);
       setLlmTimeoutSeconds(String(data.timeout_seconds));
+      setCourseSummaryPrompt(data.course_summary_prompt);
+      setLectureNotesPrompt(data.lecture_notes_prompt);
       setLlmApiKey("");
       setShouldClearLlmApiKey(false);
       setLlmApiKeyConfigured(data.api_key_configured);
@@ -366,9 +470,42 @@ function App() {
     return statusLabels[status] ?? status;
   }
 
+  function getCourseSummaryStatusLabel(status: string) {
+    // 课程简介状态独立于 PDF 解析状态，前端单独转换文案。
+    const statusLabels: Record<string, string> = {
+      pending: "等待生成",
+      processing: "生成中",
+      ready: "已生成",
+      failed: "生成失败",
+    };
+
+    return statusLabels[status] ?? status;
+  }
+
+  function getLectureNotesStatusLabel(status: string) {
+    // 逐页讲稿状态独立于页面解析状态，前端单独转换文案。
+    const statusLabels: Record<string, string> = {
+      pending: "等待生成",
+      processing: "生成中",
+      ready: "已生成",
+      failed: "生成失败",
+    };
+
+    return statusLabels[status] ?? status;
+  }
+
   function isDocumentBusy(documentId: string) {
     // 判断某个文档是否正在执行重命名或删除操作。
     return documentActionState?.documentId === documentId;
+  }
+
+  function isPageLectureNotesBusy(documentId: string, pageNumber: number) {
+    // 判断某一页是否正在执行讲稿重新生成操作。
+    return (
+      documentActionState?.documentId === documentId &&
+      documentActionState.action === "regeneratingLectureNotes" &&
+      documentActionState.pageNumber === pageNumber
+    );
   }
 
   function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -527,6 +664,144 @@ function App() {
     }
   }
 
+  async function regenerateCourseSummary(document: DocumentItem) {
+    setDocumentActionState({
+      documentId: document.document_id,
+      action: "regeneratingSummary",
+    });
+    setDocumentActionMessage("");
+
+    try {
+      const response = await fetch(
+        `/api/documents/${document.document_id}/course-summary/regenerate`,
+        {
+          method: "POST",
+        },
+      );
+
+      if (!response.ok) {
+        const errorData = (await response.json().catch(() => null)) as { detail?: string } | null;
+        throw new Error(errorData?.detail ?? `重新生成失败，HTTP 状态码：${response.status}`);
+      }
+
+      setDocumentActionMessage("课程简介已开始重新生成。");
+      await loadDocuments();
+    } catch (error) {
+      setDocumentActionMessage(
+        error instanceof Error ? error.message : "重新生成课程简介失败，请稍后重试。",
+      );
+    } finally {
+      setDocumentActionState(null);
+    }
+  }
+
+  async function loadDocumentPages(documentId: string) {
+    setPagesMessageByDocument((currentMessages) => ({
+      ...currentMessages,
+      [documentId]: "正在加载页面讲稿...",
+    }));
+
+    try {
+      const response = await fetch(`/api/documents/${documentId}/pages`);
+
+      if (!response.ok) {
+        const errorData = (await response.json().catch(() => null)) as { detail?: string } | null;
+        throw new Error(errorData?.detail ?? `页面讲稿加载失败，HTTP 状态码：${response.status}`);
+      }
+
+      const data = (await response.json()) as PageItem[];
+
+      setPagesByDocument((currentPages) => ({
+        ...currentPages,
+        [documentId]: data,
+      }));
+      setPagesMessageByDocument((currentMessages) => ({
+        ...currentMessages,
+        [documentId]: data.length > 0 ? "" : "当前文档还没有页面记录。",
+      }));
+    } catch (error) {
+      setPagesMessageByDocument((currentMessages) => ({
+        ...currentMessages,
+        [documentId]: error instanceof Error ? error.message : "页面讲稿加载失败，请稍后重试。",
+      }));
+    }
+  }
+
+  async function toggleLectureNotesPanel(document: DocumentItem) {
+    if (expandedLectureNotesDocumentId === document.document_id) {
+      setExpandedLectureNotesDocumentId(null);
+      return;
+    }
+
+    setExpandedLectureNotesDocumentId(document.document_id);
+    await loadDocumentPages(document.document_id);
+  }
+
+  async function regenerateDocumentLectureNotes(document: DocumentItem) {
+    setDocumentActionState({
+      documentId: document.document_id,
+      action: "regeneratingLectureNotes",
+    });
+    setDocumentActionMessage("");
+
+    try {
+      const response = await fetch(
+        `/api/documents/${document.document_id}/lecture-notes/regenerate`,
+        {
+          method: "POST",
+        },
+      );
+
+      if (!response.ok) {
+        const errorData = (await response.json().catch(() => null)) as { detail?: string } | null;
+        throw new Error(errorData?.detail ?? `重新生成讲稿失败，HTTP 状态码：${response.status}`);
+      }
+
+      setDocumentActionMessage("逐页讲稿已开始重新生成。");
+      await loadDocumentPages(document.document_id);
+    } catch (error) {
+      setDocumentActionMessage(
+        error instanceof Error ? error.message : "重新生成逐页讲稿失败，请稍后重试。",
+      );
+    } finally {
+      setDocumentActionState(null);
+    }
+  }
+
+  async function regeneratePageLectureNotes(document: DocumentItem, page: PageItem) {
+    setDocumentActionState({
+      documentId: document.document_id,
+      pageNumber: page.page_number,
+      action: "regeneratingLectureNotes",
+    });
+    setDocumentActionMessage("");
+
+    try {
+      const response = await fetch(
+        `/api/documents/${document.document_id}/pages/${page.page_number}/lecture-notes/regenerate`,
+        {
+          method: "POST",
+        },
+      );
+
+      if (!response.ok) {
+        const errorData = (await response.json().catch(() => null)) as { detail?: string } | null;
+        throw new Error(
+          errorData?.detail ?? `重新生成第 ${page.page_number} 页讲稿失败，HTTP 状态码：${response.status}`,
+        );
+      }
+
+      setDocumentActionMessage(`第 ${page.page_number} 页讲稿已开始重新生成。`);
+      await loadDocumentPages(document.document_id);
+    } catch (error) {
+      setDocumentActionMessage(
+        error instanceof Error ? error.message : "重新生成单页讲稿失败，请稍后重试。",
+      );
+    } finally {
+      setDocumentActionState(null);
+    }
+  }
+
   return (
     <main className="app-shell">
       <section className="status-panel">
@@ -649,6 +924,56 @@ function App() {
               disabled={llmConfigState === "saving" || llmConfigState === "testing"}
             />
           </label>
+
+          <div className="prompt-setting">
+            <div className="prompt-setting-header">
+              <span>课程简介 prompt</span>
+              <button
+                type="button"
+                className="prompt-toggle-button"
+                onClick={() => setIsCourseSummaryPromptExpanded((isExpanded) => !isExpanded)}
+                disabled={llmConfigState === "saving" || llmConfigState === "testing"}
+              >
+                {isCourseSummaryPromptExpanded ? "折叠" : "展开"}
+              </button>
+            </div>
+            {isCourseSummaryPromptExpanded ? (
+              <label className="config-field">
+                <textarea
+                  ref={courseSummaryPromptTextareaRef}
+                  className="prompt-textarea"
+                  value={courseSummaryPrompt}
+                  onChange={(event) => setCourseSummaryPrompt(event.target.value)}
+                  disabled={llmConfigState === "saving" || llmConfigState === "testing"}
+                />
+              </label>
+            ) : null}
+          </div>
+
+          <div className="prompt-setting">
+            <div className="prompt-setting-header">
+              <span>逐页讲稿 prompt</span>
+              <button
+                type="button"
+                className="prompt-toggle-button"
+                onClick={() => setIsLectureNotesPromptExpanded((isExpanded) => !isExpanded)}
+                disabled={llmConfigState === "saving" || llmConfigState === "testing"}
+              >
+                {isLectureNotesPromptExpanded ? "折叠" : "展开"}
+              </button>
+            </div>
+            {isLectureNotesPromptExpanded ? (
+              <label className="config-field">
+                <textarea
+                  ref={lectureNotesPromptTextareaRef}
+                  className="prompt-textarea"
+                  value={lectureNotesPrompt}
+                  onChange={(event) => setLectureNotesPrompt(event.target.value)}
+                  disabled={llmConfigState === "saving" || llmConfigState === "testing"}
+                />
+              </label>
+            ) : null}
+          </div>
 
           <label className="config-field">
             <span>测试提示词</span>
@@ -776,10 +1101,161 @@ function App() {
                       <dt>总页数</dt>
                       <dd>{document.page_count}</dd>
                     </div>
+                    <div>
+                      <dt>课程简介</dt>
+                      <dd>
+                        <span
+                          className={`document-status document-status--${document.course_summary_status}`}
+                        >
+                          {getCourseSummaryStatusLabel(document.course_summary_status)}
+                        </span>
+                      </dd>
+                    </div>
                   </dl>
                   {document.error_message ? (
                     <p className="document-error">{document.error_message}</p>
                   ) : null}
+                  <div className="course-summary-box">
+                    {document.course_summary_status === "ready" && document.course_summary ? (
+                      <>
+                        <span>课程简介</span>
+                        <p>{document.course_summary}</p>
+                        <button
+                          type="button"
+                          className="secondary-action-button"
+                          onClick={() => regenerateCourseSummary(document)}
+                          disabled={isDocumentBusy(document.document_id)}
+                        >
+                          {documentActionState?.documentId === document.document_id &&
+                          documentActionState.action === "regeneratingSummary"
+                            ? "提交中..."
+                            : "重新生成简介"}
+                        </button>
+                      </>
+                    ) : null}
+                    {document.course_summary_status === "processing" ? (
+                      <p>课程简介正在生成，稍后刷新文档列表查看结果。</p>
+                    ) : null}
+                    {document.course_summary_status === "pending" ? (
+                      <>
+                        <p>课程简介还没有开始生成。</p>
+                        <button
+                          type="button"
+                          className="secondary-action-button"
+                          onClick={() => regenerateCourseSummary(document)}
+                          disabled={isDocumentBusy(document.document_id)}
+                        >
+                          {documentActionState?.documentId === document.document_id &&
+                          documentActionState.action === "regeneratingSummary"
+                            ? "提交中..."
+                            : "生成简介"}
+                        </button>
+                      </>
+                    ) : null}
+                    {document.course_summary_status === "failed" ? (
+                      <>
+                        <p className="document-error">
+                          {document.course_summary_error ?? "课程简介生成失败。"}
+                        </p>
+                        <button
+                          type="button"
+                          className="secondary-action-button"
+                          onClick={() => regenerateCourseSummary(document)}
+                          disabled={isDocumentBusy(document.document_id)}
+                        >
+                          {documentActionState?.documentId === document.document_id &&
+                          documentActionState.action === "regeneratingSummary"
+                            ? "提交中..."
+                            : "重新生成简介"}
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
+                  <div className="lecture-notes-box">
+                    <div className="lecture-notes-header">
+                      <span>逐页讲稿</span>
+                      <div className="lecture-notes-actions">
+                        <button
+                          type="button"
+                          className="secondary-action-button"
+                          onClick={() => toggleLectureNotesPanel(document)}
+                          disabled={isDocumentBusy(document.document_id)}
+                        >
+                          {expandedLectureNotesDocumentId === document.document_id
+                            ? "收起页面讲稿"
+                            : "查看页面讲稿"}
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary-action-button"
+                          onClick={() => regenerateDocumentLectureNotes(document)}
+                          disabled={
+                            isDocumentBusy(document.document_id) ||
+                            document.course_summary_status !== "ready" ||
+                            !document.course_summary
+                          }
+                        >
+                          {documentActionState?.documentId === document.document_id &&
+                          documentActionState.action === "regeneratingLectureNotes" &&
+                          documentActionState.pageNumber === undefined
+                            ? "提交中..."
+                            : "重新生成全部讲稿"}
+                        </button>
+                      </div>
+                    </div>
+                    {document.course_summary_status !== "ready" || !document.course_summary ? (
+                      <p>逐页讲稿会等待课程简介生成成功后再生成。</p>
+                    ) : null}
+                    {expandedLectureNotesDocumentId === document.document_id ? (
+                      <div className="lecture-notes-panel">
+                        {pagesMessageByDocument[document.document_id] ? (
+                          <p>{pagesMessageByDocument[document.document_id]}</p>
+                        ) : null}
+                        {(pagesByDocument[document.document_id] ?? []).length > 0 ? (
+                          <ul className="lecture-notes-list">
+                            {(pagesByDocument[document.document_id] ?? []).map((page) => (
+                              <li className="lecture-notes-item" key={page.page_id}>
+                                <div className="lecture-notes-item-header">
+                                  <strong>第 {page.page_number} 页</strong>
+                                  <span
+                                    className={`document-status document-status--${page.lecture_notes_status}`}
+                                  >
+                                    {getLectureNotesStatusLabel(page.lecture_notes_status)}
+                                  </span>
+                                </div>
+                                {page.lecture_notes_status === "ready" && page.lecture_notes ? (
+                                  <p>{page.lecture_notes}</p>
+                                ) : null}
+                                {page.lecture_notes_status === "processing" ||
+                                page.lecture_notes_status === "pending" ? (
+                                  <p>本页讲稿正在等待或生成中。</p>
+                                ) : null}
+                                {page.lecture_notes_status === "failed" ? (
+                                  <p className="document-error">
+                                    {page.lecture_notes_error ?? "本页讲稿生成失败。"}
+                                  </p>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  className="secondary-action-button"
+                                  onClick={() => regeneratePageLectureNotes(document, page)}
+                                  disabled={
+                                    isDocumentBusy(document.document_id) ||
+                                    document.course_summary_status !== "ready" ||
+                                    !document.course_summary
+                                  }
+                                >
+                                  {isPageLectureNotesBusy(document.document_id, page.page_number)
+                                    ? "提交中..."
+                                    : "重新生成本页讲稿"}
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
                 </li>
               ))}
             </ul>

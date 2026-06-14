@@ -23,7 +23,7 @@ from typing import Any
 from uuid import uuid4
 
 import pymupdf
-from fastapi import FastAPI, File, HTTPException, Response, UploadFile, status
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Response, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -81,12 +81,16 @@ class LLMConfigUpdateRequest(BaseModel):
         api_key：模型服务密钥；为 None 时表示不修改旧密钥。
         model：用于生成文本或图文回答的模型名称。
         timeout_seconds：请求模型服务时最多等待的秒数。
+        course_summary_prompt：生成课程简介时使用的可编辑 prompt；为 None 时表示不修改旧 prompt。
+        lecture_notes_prompt：生成逐页讲稿时使用的可编辑 prompt；为 None 时表示不修改旧 prompt。
     """
 
     base_url: str
     api_key: str | None = None
     model: str
     timeout_seconds: int
+    course_summary_prompt: str | None = None
+    lecture_notes_prompt: str | None = None
 
 
 class LLMTestRequest(BaseModel):
@@ -108,27 +112,98 @@ class LLMConfig:
         api_key：模型服务密钥。
         model：使用的模型名称。
         timeout_seconds：HTTP 请求超时时间，单位是秒。
+        course_summary_prompt：生成课程简介时使用的 prompt。
+        lecture_notes_prompt：生成逐页讲稿时使用的 prompt。
     """
 
     base_url: str
     api_key: str
     model: str
     timeout_seconds: int
+    course_summary_prompt: str
+    lecture_notes_prompt: str
 
 
 # LLM_DEFAULT_CONFIG 保存 LLM 配置的默认值。
 # 这些值会优先从环境变量读取，随后可以被 WebUI 写入的 SQLite 配置覆盖。
+DEFAULT_COURSE_SUMMARY_PROMPT = """你是一位经验丰富、讲解清晰的课程老师。请根据用户上传的 PDF slides 内容，生成一份面向学生的课程导读。
+
+请用 Markdown 输出，必须包含以下部分：
+
+## 课程主题
+用 2-4 句话说明这份 slides 主要讲什么。
+
+## 适合的学习对象
+说明适合哪些学生或学习阶段。
+
+## 主要知识点
+用项目符号列出 5-10 个重点。
+
+## 推荐学习顺序
+按学习路径说明应该如何阅读和理解这些 slides。
+
+## 学完后应掌握的内容
+列出学生学习完成后应能理解或完成的事情。
+
+要求：
+- 不要简单复制 slides 原文。
+- 要像老师备课一样组织内容。
+- 如果某些页面文字很少，也要根据标题、上下文和整体结构进行合理归纳。
+"""
+
+DEFAULT_LECTURE_NOTES_PROMPT = """你是一位经验丰富、讲解清晰的课程老师。请根据课程简介、当前页文字和当前页截图，为这一页 slides 生成课堂讲稿。
+
+请用 Markdown 输出，必须包含以下部分：
+
+## 本页核心观点
+用 2-4 句话说明这一页在整堂课中的作用和重点。
+
+## 老师讲解词
+写出老师可以直接照着讲的自然口语化讲稿。
+
+## 需要提醒学生注意的地方
+列出学生容易忽略、误解或需要重点观察的内容。
+
+## 与前后页面的衔接
+说明这一页如何承接前面内容，并为后续内容做铺垫。
+
+要求：
+- 重点围绕当前页，不要写成整份文档的泛泛总结。
+- 结合截图理解图表、布局、公式和视觉元素。
+- 不要简单复制 slides 原文。
+- 讲解要像老师上课，而不是普通摘要工具。
+"""
+
 LLM_DEFAULT_CONFIG = {
     "base_url": getenv("LLM_BASE_URL", "https://api.openai.com/v1"),
     "api_key": getenv("LLM_API_KEY", ""),
     "model": getenv("LLM_MODEL", "gpt-4.1-mini"),
     "timeout_seconds": getenv("LLM_TIMEOUT_SECONDS", "60"),
+    "course_summary_prompt": getenv(
+        "COURSE_SUMMARY_PROMPT",
+        DEFAULT_COURSE_SUMMARY_PROMPT,
+    ),
+    "lecture_notes_prompt": getenv(
+        "LECTURE_NOTES_PROMPT",
+        DEFAULT_LECTURE_NOTES_PROMPT,
+    ),
 }
 
 
 # LLM_CONFIG_KEYS 限定当前任务允许保存和读取的 LLM 配置项。
 # 后续如果新增温度、最大输出长度等配置，也应该先加入这里，再开放给 WebUI。
-LLM_CONFIG_KEYS = {"base_url", "api_key", "model", "timeout_seconds"}
+LLM_CONFIG_KEYS = {
+    "base_url",
+    "api_key",
+    "model",
+    "timeout_seconds",
+    "course_summary_prompt",
+    "lecture_notes_prompt",
+}
+
+# COURSE_SUMMARY_INPUT_LIMIT 是课程简介生成时最多发送给 LLM 的页面文本长度。
+# 第一版使用固定值，避免长 PDF 让单次请求过大。
+COURSE_SUMMARY_INPUT_LIMIT = 12000
 
 
 def init_database() -> None:
@@ -164,6 +239,14 @@ def init_database() -> None:
         }
         if "error_message" not in document_columns:
             connection.execute("ALTER TABLE documents ADD COLUMN error_message TEXT")
+        if "course_summary" not in document_columns:
+            connection.execute("ALTER TABLE documents ADD COLUMN course_summary TEXT")
+        if "course_summary_status" not in document_columns:
+            connection.execute(
+                "ALTER TABLE documents ADD COLUMN course_summary_status TEXT NOT NULL DEFAULT 'pending'"
+            )
+        if "course_summary_error" not in document_columns:
+            connection.execute("ALTER TABLE documents ADD COLUMN course_summary_error TEXT")
 
         # pages 表保存 PDF 每一页的解析结果。
         # document_id 和 page_number 做唯一约束，避免同一文档同一页被重复插入。
@@ -188,6 +271,14 @@ def init_database() -> None:
         page_columns = {row[1] for row in connection.execute("PRAGMA table_info(pages)").fetchall()}
         if "image_path" not in page_columns:
             connection.execute("ALTER TABLE pages ADD COLUMN image_path TEXT")
+        if "lecture_notes" not in page_columns:
+            connection.execute("ALTER TABLE pages ADD COLUMN lecture_notes TEXT")
+        if "lecture_notes_status" not in page_columns:
+            connection.execute(
+                "ALTER TABLE pages ADD COLUMN lecture_notes_status TEXT NOT NULL DEFAULT 'pending'"
+            )
+        if "lecture_notes_error" not in page_columns:
+            connection.execute("ALTER TABLE pages ADD COLUMN lecture_notes_error TEXT")
 
         # app_settings 表用于保存可以通过 WebUI 修改的应用配置。
         # 当前任务先保存 LLM 配置，后续新增配置也可以复用这个 key-value 表。
@@ -348,6 +439,8 @@ def get_llm_config() -> LLMConfig:
         api_key=merged_settings["api_key"],
         model=merged_settings["model"].strip(),
         timeout_seconds=normalize_timeout_seconds(merged_settings["timeout_seconds"]),
+        course_summary_prompt=merged_settings["course_summary_prompt"].strip(),
+        lecture_notes_prompt=merged_settings["lecture_notes_prompt"].strip(),
     )
 
 
@@ -365,6 +458,8 @@ def serialize_llm_config(config: LLMConfig) -> dict[str, str | int | bool]:
         "base_url": config.base_url,
         "model": config.model,
         "timeout_seconds": config.timeout_seconds,
+        "course_summary_prompt": config.course_summary_prompt,
+        "lecture_notes_prompt": config.lecture_notes_prompt,
         "api_key_configured": bool(config.api_key),
         "api_key_preview": mask_secret(config.api_key),
     }
@@ -592,6 +687,9 @@ def row_to_document(row: sqlite3.Row) -> dict[str, str | int | None]:
         "status": row["status"],
         "page_count": row["page_count"],
         "error_message": row["error_message"],
+        "course_summary": row["course_summary"],
+        "course_summary_status": row["course_summary_status"],
+        "course_summary_error": row["course_summary_error"],
         "created_at": row["created_at"],
     }
 
@@ -638,6 +736,9 @@ def row_to_page(row: sqlite3.Row) -> dict[str, str | int | None]:
         ),
         "status": row["status"],
         "error_message": row["error_message"],
+        "lecture_notes": row["lecture_notes"],
+        "lecture_notes_status": row["lecture_notes_status"],
+        "lecture_notes_error": row["lecture_notes_error"],
         "created_at": row["created_at"],
     }
 
@@ -662,6 +763,9 @@ def get_document_with_page_count(document_id: str) -> dict[str, str | int | None
                 documents.file_path,
                 documents.status,
                 documents.error_message,
+                documents.course_summary,
+                documents.course_summary_status,
+                documents.course_summary_error,
                 documents.created_at,
                 COUNT(pages.id) AS page_count
             FROM documents
@@ -779,6 +883,126 @@ def update_document_status(
         connection.commit()
 
 
+def update_course_summary_status(
+    document_id: str,
+    summary_status: str,
+    course_summary: str | None = None,
+    error_message: str | None = None,
+) -> None:
+    """更新文档课程简介生成状态和结果。
+
+    参数：
+        document_id：需要更新课程简介状态的文档 ID。
+        summary_status：新的课程简介状态，例如 processing、ready 或 failed。
+        course_summary：生成成功时保存的 Markdown 简介文本；为 None 时保留已有简介文本。
+        error_message：生成失败时保存的错误信息。
+
+    返回值：
+        None：这个函数只负责写数据库。
+    """
+
+    with get_database_connection() as connection:
+        if course_summary is None:
+            # 简介生成中或生成失败时，只更新状态和错误信息，避免重新生成失败后丢失旧简介。
+            connection.execute(
+                """
+                UPDATE documents
+                SET
+                    course_summary_status = ?,
+                    course_summary_error = ?
+                WHERE id = ?
+                """,
+                (summary_status, error_message, document_id),
+            )
+        else:
+            # 只有 LLM 成功返回新简介时，才覆盖 course_summary 文本。
+            connection.execute(
+                """
+                UPDATE documents
+                SET
+                    course_summary_status = ?,
+                    course_summary = ?,
+                    course_summary_error = ?
+                WHERE id = ?
+                """,
+                (summary_status, course_summary, error_message, document_id),
+            )
+        connection.commit()
+
+
+def update_page_lecture_notes_status(
+    document_id: str,
+    page_number: int,
+    lecture_notes_status: str,
+    lecture_notes: str | None = None,
+    error_message: str | None = None,
+) -> None:
+    """更新单页讲稿生成状态和结果。
+
+    参数：
+        document_id：页面所属文档 ID。
+        page_number：从 1 开始的页码。
+        lecture_notes_status：新的讲稿状态，例如 processing、ready 或 failed。
+        lecture_notes：生成成功时保存的 Markdown 讲稿文本；为 None 时保留旧讲稿。
+        error_message：生成失败时保存的错误信息。
+
+    返回值：
+        None：这个函数只负责写数据库。
+    """
+
+    with get_database_connection() as connection:
+        if lecture_notes is None:
+            # 生成中或失败时不清空旧讲稿，避免重试失败后丢失已经可用的内容。
+            connection.execute(
+                """
+                UPDATE pages
+                SET
+                    lecture_notes_status = ?,
+                    lecture_notes_error = ?
+                WHERE document_id = ? AND page_number = ?
+                """,
+                (lecture_notes_status, error_message, document_id, page_number),
+            )
+        else:
+            # 只有模型成功返回新讲稿时，才覆盖 lecture_notes 正文。
+            connection.execute(
+                """
+                UPDATE pages
+                SET
+                    lecture_notes_status = ?,
+                    lecture_notes = ?,
+                    lecture_notes_error = ?
+                WHERE document_id = ? AND page_number = ?
+                """,
+                (lecture_notes_status, lecture_notes, error_message, document_id, page_number),
+            )
+        connection.commit()
+
+
+def reset_document_lecture_notes_status(document_id: str) -> None:
+    """把指定文档的所有页面讲稿状态重置为等待生成。
+
+    参数：
+        document_id：需要重置讲稿状态的文档 ID。
+
+    返回值：
+        None：这个函数只负责写数据库。
+    """
+
+    with get_database_connection() as connection:
+        connection.execute(
+            """
+            UPDATE pages
+            SET
+                lecture_notes_status = 'pending',
+                lecture_notes_error = NULL
+            WHERE document_id = ?
+            """,
+            (document_id,),
+        )
+        connection.commit()
+
+
 def create_page_record(
     document_id: str,
     page_number: int,
@@ -809,9 +1033,19 @@ def create_page_record(
         connection.execute(
             """
             INSERT OR REPLACE INTO pages (
-                id, document_id, page_number, text, image_path, status, error_message, created_at
+                id,
+                document_id,
+                page_number,
+                text,
+                image_path,
+                status,
+                error_message,
+                lecture_notes,
+                lecture_notes_status,
+                lecture_notes_error,
+                created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 page_id,
@@ -821,6 +1055,9 @@ def create_page_record(
                 str(image_path) if image_path is not None else None,
                 page_status,
                 error_message,
+                None,
+                "pending",
+                None,
                 created_at,
             ),
         )
@@ -870,6 +1107,385 @@ def render_page_image(page: pymupdf.Page, document_id: str, page_number: int) ->
     pixmap.save(image_path)
 
     return image_path
+
+
+def build_course_summary_input(document_id: str) -> tuple[dict[str, str | int | None], str, bool]:
+    """读取文档页面文字，并整理成课程简介生成输入。
+
+    参数：
+        document_id：需要生成课程简介的文档 ID。
+
+    返回值：
+        tuple[dict[str, str | int | None], str, bool]：文档信息、整理后的页面文本、是否发生截断。
+    """
+
+    with get_database_connection() as connection:
+        document_row = connection.execute(
+            """
+            SELECT
+                documents.id,
+                documents.title,
+                documents.file_path,
+                documents.status,
+                documents.error_message,
+                documents.course_summary,
+                documents.course_summary_status,
+                documents.course_summary_error,
+                documents.created_at,
+                COUNT(pages.id) AS page_count
+            FROM documents
+            LEFT JOIN pages ON pages.document_id = documents.id
+            WHERE documents.id = ?
+            GROUP BY documents.id
+            """,
+            (document_id,),
+        ).fetchone()
+
+        if document_row is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="没有找到对应的文档。",
+            )
+
+        page_rows = connection.execute(
+            """
+            SELECT page_number, text
+            FROM pages
+            WHERE document_id = ?
+            ORDER BY page_number ASC
+            """,
+            (document_id,),
+        ).fetchall()
+
+    page_text_blocks: list[str] = []
+    for row in page_rows:
+        page_text = row["text"].strip() if row["text"] else "（本页没有可提取文字）"
+        page_text_blocks.append(f"第 {row['page_number']} 页：\n{page_text}")
+
+    full_pages_text = "\n\n".join(page_text_blocks)
+    was_truncated = len(full_pages_text) > COURSE_SUMMARY_INPUT_LIMIT
+    if was_truncated:
+        full_pages_text = full_pages_text[:COURSE_SUMMARY_INPUT_LIMIT]
+
+    return row_to_document(document_row), full_pages_text, was_truncated
+
+
+def build_course_summary_prompt(
+    document: dict[str, str | int | None],
+    pages_text: str,
+    was_truncated: bool,
+) -> str:
+    """构造发送给 LLM 的课程简介生成 prompt。
+
+    参数：
+        document：文档基本信息。
+        pages_text：已经整理并可能截断过的页面文字。
+        was_truncated：页面文字是否因为过长发生截断。
+
+    返回值：
+        str：完整 prompt 文本。
+    """
+
+    llm_config = get_llm_config()
+    truncation_note = (
+        "注意：由于文档较长，下面的页面文字已按 12000 字符上限截断。请基于已提供内容生成课程导读。"
+        if was_truncated
+        else "下面包含当前文档全部已提取页面文字。"
+    )
+
+    return f"""{llm_config.course_summary_prompt}
+
+文档标题：{document["title"]}
+总页数：{document["page_count"]}
+{truncation_note}
+
+页面文字：
+{pages_text}
+"""
+
+
+def build_lecture_notes_prompt(
+    document: sqlite3.Row,
+    page: sqlite3.Row,
+) -> str:
+    """构造发送给 LLM 的单页讲稿生成 prompt。
+
+    参数：
+        document：包含文档标题、页数和课程简介的数据库行。
+        page：包含当前页页码和页面文字的数据库行。
+
+    返回值：
+        str：完整 prompt 文本。
+    """
+
+    llm_config = get_llm_config()
+    page_text = page["text"].strip() if page["text"] else "（本页没有可提取文字）"
+
+    return f"""{llm_config.lecture_notes_prompt}
+
+文档标题：{document["title"]}
+总页数：{document["page_count"]}
+当前页码：第 {page["page_number"]} 页
+
+课程简介：
+{document["course_summary"]}
+
+当前页提取文字：
+{page_text}
+"""
+
+
+def get_document_ready_for_lecture_notes(document_id: str) -> sqlite3.Row:
+    """读取可以生成逐页讲稿的文档记录。
+
+    参数：
+        document_id：需要生成讲稿的文档 ID。
+
+    返回值：
+        sqlite3.Row：包含课程简介和总页数的文档行。
+    """
+
+    with get_database_connection() as connection:
+        document = connection.execute(
+            """
+            SELECT
+                documents.id,
+                documents.title,
+                documents.course_summary,
+                documents.course_summary_status,
+                COUNT(pages.id) AS page_count
+            FROM documents
+            LEFT JOIN pages ON pages.document_id = documents.id
+            WHERE documents.id = ?
+            GROUP BY documents.id
+            """,
+            (document_id,),
+        ).fetchone()
+
+    if document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="没有找到对应的文档。",
+        )
+
+    if document["course_summary_status"] != "ready" or not document["course_summary"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="课程简介尚未生成成功，无法生成逐页讲稿。",
+        )
+
+    if document["page_count"] == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="当前文档还没有页面记录，无法生成逐页讲稿。",
+        )
+
+    return document
+
+
+def list_pages_for_lecture_notes(document_id: str) -> list[sqlite3.Row]:
+    """读取指定文档的所有页面，供逐页讲稿生成使用。
+
+    参数：
+        document_id：需要读取页面的文档 ID。
+
+    返回值：
+        list[sqlite3.Row]：按页码升序排列的页面列表。
+    """
+
+    with get_database_connection() as connection:
+        return connection.execute(
+            """
+            SELECT
+                id,
+                document_id,
+                page_number,
+                text,
+                image_path,
+                status,
+                error_message,
+                lecture_notes,
+                lecture_notes_status,
+                lecture_notes_error,
+                created_at
+            FROM pages
+            WHERE document_id = ?
+            ORDER BY page_number ASC
+            """,
+            (document_id,),
+        ).fetchall()
+
+
+def get_page_for_lecture_notes(document_id: str, page_number: int) -> sqlite3.Row:
+    """读取指定页面，供单页讲稿生成使用。
+
+    参数：
+        document_id：页面所属文档 ID。
+        page_number：从 1 开始的页码。
+
+    返回值：
+        sqlite3.Row：页面记录。
+    """
+
+    if page_number < 1:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="没有找到对应的页面。",
+        )
+
+    with get_database_connection() as connection:
+        page = connection.execute(
+            """
+            SELECT
+                id,
+                document_id,
+                page_number,
+                text,
+                image_path,
+                status,
+                error_message,
+                lecture_notes,
+                lecture_notes_status,
+                lecture_notes_error,
+                created_at
+            FROM pages
+            WHERE document_id = ? AND page_number = ?
+            """,
+            (document_id, page_number),
+        ).fetchone()
+
+    if page is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="没有找到对应的页面。",
+        )
+
+    return page
+
+
+def generate_single_page_lecture_notes(
+    document: sqlite3.Row,
+    page: sqlite3.Row,
+) -> None:
+    """为单页生成讲稿，并把结果写入数据库。
+
+    参数：
+        document：已确认课程简介 ready 的文档行。
+        page：需要生成讲稿的页面行。
+
+    返回值：
+        None：生成结果会写入 pages 表。
+    """
+
+    document_id = document["id"]
+    page_number = page["page_number"]
+
+    try:
+        update_page_lecture_notes_status(
+            document_id=document_id,
+            page_number=page_number,
+            lecture_notes_status="processing",
+            lecture_notes=None,
+            error_message=None,
+        )
+
+        if page["status"] != "ready":
+            raise ValueError(page["error_message"] or "当前页面解析失败，无法生成讲稿。")
+
+        if not page["image_path"]:
+            raise ValueError("当前页面还没有生成截图，无法生成讲稿。")
+
+        image_path = resolve_page_image_path(page["image_path"])
+        ensure_page_image_file_is_safe(image_path)
+        if not image_path.exists():
+            raise ValueError("页面截图文件不存在，可能已被手动删除。")
+
+        prompt = build_lecture_notes_prompt(document=document, page=page)
+        client = LLMClient(get_llm_config())
+        lecture_notes = client.complete_with_image(prompt=prompt, image_path=image_path)
+
+        update_page_lecture_notes_status(
+            document_id=document_id,
+            page_number=page_number,
+            lecture_notes_status="ready",
+            lecture_notes=lecture_notes,
+            error_message=None,
+        )
+    except Exception as error:
+        update_page_lecture_notes_status(
+            document_id=document_id,
+            page_number=page_number,
+            lecture_notes_status="failed",
+            lecture_notes=None,
+            error_message=f"逐页讲稿生成失败：{error}",
+        )
+
+
+def generate_document_lecture_notes(document_id: str) -> None:
+    """按页码顺序为整份文档生成逐页讲稿。
+
+    参数：
+        document_id：需要生成逐页讲稿的文档 ID。
+
+    返回值：
+        None：每页结果会分别写入 pages 表。
+    """
+
+    try:
+        document = get_document_ready_for_lecture_notes(document_id)
+    except HTTPException:
+        # 课程简介未 ready 或文档不存在时，不能可靠生成逐页讲稿。
+        return
+
+    pages = list_pages_for_lecture_notes(document_id)
+    for page in pages:
+        generate_single_page_lecture_notes(document=document, page=page)
+
+
+def generate_course_summary(document_id: str) -> None:
+    """为指定文档生成课程简介并写入数据库。
+
+    参数：
+        document_id：需要生成课程简介的文档 ID。
+
+    返回值：
+        None：生成结果会写入 documents 表。
+    """
+
+    try:
+        update_course_summary_status(
+            document_id=document_id,
+            summary_status="processing",
+            course_summary=None,
+            error_message=None,
+        )
+
+        document, pages_text, was_truncated = build_course_summary_input(document_id)
+        prompt = build_course_summary_prompt(
+            document=document,
+            pages_text=pages_text,
+            was_truncated=was_truncated,
+        )
+
+        client = LLMClient(get_llm_config())
+        course_summary = client.complete_text(prompt)
+
+        update_course_summary_status(
+            document_id=document_id,
+            summary_status="ready",
+            course_summary=course_summary,
+            error_message=None,
+        )
+
+        reset_document_lecture_notes_status(document_id)
+        generate_document_lecture_notes(document_id)
+    except Exception as error:
+        update_course_summary_status(
+            document_id=document_id,
+            summary_status="failed",
+            course_summary=None,
+            error_message=f"课程简介生成失败：{error}",
+        )
 
 
 def parse_pdf_pages(document_id: str, saved_path: Path) -> None:
@@ -1003,6 +1619,9 @@ def list_documents() -> list[dict[str, str | int | None]]:
                 documents.file_path,
                 documents.status,
                 documents.error_message,
+                documents.course_summary,
+                documents.course_summary_status,
+                documents.course_summary_error,
                 documents.created_at,
                 COUNT(pages.id) AS page_count
             FROM documents
@@ -1053,6 +1672,9 @@ def list_document_pages(document_id: str) -> list[dict[str, str | int | None]]:
                 image_path,
                 status,
                 error_message,
+                lecture_notes,
+                lecture_notes_status,
+                lecture_notes_error,
                 created_at
             FROM pages
             WHERE document_id = ?
@@ -1182,6 +1804,28 @@ def update_llm_config(request: LLMConfigUpdateRequest) -> dict[str, str | int | 
         "timeout_seconds": str(timeout_seconds),
     }
 
+    # course_summary_prompt 为 None 表示旧客户端没有提交这个新增字段，此时保留旧 prompt。
+    # 如果前端或用户明确提交了 prompt，就必须保证它不是空字符串。
+    if request.course_summary_prompt is not None:
+        course_summary_prompt = request.course_summary_prompt.strip()
+        if not course_summary_prompt:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="课程简介 prompt 不能为空。",
+            )
+        next_settings["course_summary_prompt"] = course_summary_prompt
+
+    # lecture_notes_prompt 为 None 表示旧客户端没有提交这个新增字段，此时保留旧 prompt。
+    # 如果前端或用户明确提交了 prompt，就必须保证它不是空字符串。
+    if request.lecture_notes_prompt is not None:
+        lecture_notes_prompt = request.lecture_notes_prompt.strip()
+        if not lecture_notes_prompt:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="逐页讲稿 prompt 不能为空。",
+            )
+        next_settings["lecture_notes_prompt"] = lecture_notes_prompt
+
     # api_key 为 None 表示前端没有提交新密钥，要保留旧密钥。
     # api_key 为空字符串表示用户明确清空密钥。
     if request.api_key is not None:
@@ -1216,6 +1860,122 @@ def test_llm_config(request: LLMTestRequest) -> dict[str, str]:
     return {
         "status": "ok",
         "answer": answer,
+    }
+
+
+@app.post("/api/documents/{document_id}/course-summary/regenerate")
+def regenerate_course_summary(
+    document_id: str,
+    background_tasks: BackgroundTasks,
+) -> dict[str, str]:
+    """重新生成指定文档的课程简介。
+
+    参数：
+        document_id：需要重新生成课程简介的文档 ID。
+        background_tasks：FastAPI 提供的后台任务管理对象。
+
+    返回值：
+        dict[str, str]：表示后台任务已经提交的结果。
+    """
+
+    init_database()
+
+    with get_database_connection() as connection:
+        document = connection.execute(
+            "SELECT id FROM documents WHERE id = ?",
+            (document_id,),
+        ).fetchone()
+        if document is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="没有找到对应的文档。",
+            )
+
+        page_count = connection.execute(
+            "SELECT COUNT(id) AS page_count FROM pages WHERE document_id = ?",
+            (document_id,),
+        ).fetchone()["page_count"]
+
+    if page_count == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="当前文档还没有页面记录，无法生成课程简介。",
+        )
+
+    update_course_summary_status(
+        document_id=document_id,
+        summary_status="processing",
+        course_summary=None,
+        error_message=None,
+    )
+    background_tasks.add_task(generate_course_summary, document_id)
+
+    return {
+        "status": "processing",
+        "document_id": document_id,
+    }
+
+
+@app.post("/api/documents/{document_id}/lecture-notes/regenerate")
+def regenerate_document_lecture_notes(
+    document_id: str,
+    background_tasks: BackgroundTasks,
+) -> dict[str, str]:
+    """重新生成指定文档的所有页面讲稿。
+
+    参数：
+        document_id：需要重新生成逐页讲稿的文档 ID。
+        background_tasks：FastAPI 提供的后台任务管理对象。
+
+    返回值：
+        dict[str, str]：表示后台任务已经提交的结果。
+    """
+
+    init_database()
+    document = get_document_ready_for_lecture_notes(document_id)
+    reset_document_lecture_notes_status(document_id)
+    background_tasks.add_task(generate_document_lecture_notes, document["id"])
+
+    return {
+        "status": "processing",
+        "document_id": document_id,
+    }
+
+
+@app.post("/api/documents/{document_id}/pages/{page_number}/lecture-notes/regenerate")
+def regenerate_page_lecture_notes(
+    document_id: str,
+    page_number: int,
+    background_tasks: BackgroundTasks,
+) -> dict[str, str | int]:
+    """重新生成指定页面的讲稿。
+
+    参数：
+        document_id：页面所属文档 ID。
+        page_number：从 1 开始的页码。
+        background_tasks：FastAPI 提供的后台任务管理对象。
+
+    返回值：
+        dict[str, str | int]：表示后台任务已经提交的结果。
+    """
+
+    init_database()
+    document = get_document_ready_for_lecture_notes(document_id)
+    page = get_page_for_lecture_notes(document_id=document_id, page_number=page_number)
+
+    update_page_lecture_notes_status(
+        document_id=document_id,
+        page_number=page_number,
+        lecture_notes_status="processing",
+        lecture_notes=None,
+        error_message=None,
+    )
+    background_tasks.add_task(generate_single_page_lecture_notes, document, page)
+
+    return {
+        "status": "processing",
+        "document_id": document_id,
+        "page_number": page_number,
     }
 
 
@@ -1373,7 +2133,10 @@ def is_pdf_upload(file: UploadFile) -> bool:
 
 
 @app.post("/api/documents", status_code=status.HTTP_201_CREATED)
-async def upload_document(file: UploadFile = File(...)) -> dict[str, str | int | None]:
+async def upload_document(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+) -> dict[str, str | int | None]:
     """接收用户上传的 PDF slides，并保存到本地 storage 目录。
 
     参数：
@@ -1418,14 +2181,27 @@ async def upload_document(file: UploadFile = File(...)) -> dict[str, str | int |
     with get_database_connection() as connection:
         connection.execute(
             """
-            INSERT INTO documents (id, title, file_path, status, error_message, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO documents (
+                id,
+                title,
+                file_path,
+                status,
+                error_message,
+                course_summary,
+                course_summary_status,
+                course_summary_error,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 document_id,
                 file.filename or "unknown.pdf",
                 str(saved_path),
                 document_status,
+                None,
+                None,
+                "pending",
                 None,
                 created_at,
             ),
@@ -1435,6 +2211,25 @@ async def upload_document(file: UploadFile = File(...)) -> dict[str, str | int |
     # 同步解析 PDF 页数、文字和页面截图。
     # 任务 05 暂不使用后台任务，后续 LLM 生成阶段再引入后台处理。
     parse_pdf_pages(document_id=document_id, saved_path=saved_path)
+
+    # PDF 解析成功后，后台生成整份课程简介。
+    # 生成失败只影响课程简介字段，不影响文档和页面记录继续可用。
+    document_after_parse = get_document_with_page_count(document_id)
+    if document_after_parse is not None and document_after_parse["status"] == "ready":
+        update_course_summary_status(
+            document_id=document_id,
+            summary_status="processing",
+            course_summary=None,
+            error_message=None,
+        )
+        background_tasks.add_task(generate_course_summary, document_id)
+    elif document_after_parse is not None and document_after_parse["status"] == "failed":
+        update_course_summary_status(
+            document_id=document_id,
+            summary_status="failed",
+            course_summary=None,
+            error_message="PDF 解析失败，无法生成课程简介。",
+        )
 
     # 解析后重新读取文档记录和页数，保证接口返回的是最终状态。
     with get_database_connection() as connection:
@@ -1446,6 +2241,9 @@ async def upload_document(file: UploadFile = File(...)) -> dict[str, str | int |
                 documents.file_path,
                 documents.status,
                 documents.error_message,
+                documents.course_summary,
+                documents.course_summary_status,
+                documents.course_summary_error,
                 documents.created_at,
                 COUNT(pages.id) AS page_count
             FROM documents

@@ -2,7 +2,7 @@
 
 这是一个 AI slides 阅读与授课工具。第一版目标是让用户上传 PDF slides，由 LLM 扮演老师生成课程简介、逐页讲稿，并支持针对当前页提问。
 
-当前仓库已完成任务 01 到任务 06。现在包含最小前后端通信能力、PDF 上传和本地保存能力、SQLite 文档记录持久化能力、PDF 页数和每页文字解析能力、每页 PNG 截图渲染能力，以及可在 WebUI 修改的 LLM 配置和统一 LLM 客户端。不包含课程简介或逐页讲稿生成。
+当前仓库已完成任务 01 到任务 08。现在包含最小前后端通信能力、PDF 上传和本地保存能力、SQLite 文档记录持久化能力、PDF 页数和每页文字解析能力、每页 PNG 截图渲染能力、可在 WebUI 修改的 LLM 配置和统一 LLM 客户端、上传后自动生成课程简介的能力，以及课程简介完成后逐页生成讲稿的能力。不包含 PDF 阅读页、拖动讲稿文字块或当前页问答。
 
 ## 技术栈
 
@@ -120,6 +120,8 @@ GET http://127.0.0.1:8000/api/documents/{document_id}/pages
 
 该接口返回指定文档的每一页解析记录，包括页码、页面文字、页面截图路径、页面截图访问地址、页面状态和错误信息。页码从 1 开始，符合用户阅读 PDF 时的习惯。
 
+任务 08 起，该接口还会返回逐页讲稿字段：`lecture_notes`、`lecture_notes_status` 和 `lecture_notes_error`。`lecture_notes_status` 使用 `pending`、`processing`、`ready`、`failed` 表示等待生成、生成中、生成成功和生成失败。
+
 页面截图接口：
 
 ```text
@@ -155,11 +157,13 @@ PATCH http://127.0.0.1:8000/api/llm/config
   "base_url": "https://api.openai.com/v1",
   "api_key": "你的 API Key",
   "model": "gpt-4.1-mini",
-  "timeout_seconds": 60
+  "timeout_seconds": 60,
+  "course_summary_prompt": "生成课程简介时使用的 prompt",
+  "lecture_notes_prompt": "生成逐页讲稿时使用的 prompt"
 }
 ```
 
-如果不传 `api_key` 字段，后端会保留之前保存的 API Key。所有 LLM 相关配置都必须能通过 WebUI 修改，环境变量只作为未保存配置时的默认值。
+如果不传 `api_key` 字段，后端会保留之前保存的 API Key。课程简介 prompt 和逐页讲稿 prompt 也属于配置项，可以在 WebUI 中修改。所有 LLM 相关配置都必须能通过 WebUI 修改，环境变量只作为未保存配置时的默认值。
 
 LLM 连接测试接口：
 
@@ -176,6 +180,32 @@ POST http://127.0.0.1:8000/api/llm/test
 ```
 
 该接口会使用当前配置向 OpenAI-compatible 服务发起一次文本请求，用来验证 `base_url`、`api_key` 和 `model` 是否可用。
+
+课程简介重新生成接口：
+
+```text
+POST http://127.0.0.1:8000/api/documents/{document_id}/course-summary/regenerate
+```
+
+该接口会把指定文档的课程简介状态改为生成中，并在后台重新调用 LLM 生成课程简介。课程简介生成失败不会影响 PDF 页面记录和截图继续使用。
+
+课程简介重新生成成功后，后端会自动重新生成整份逐页讲稿，保证逐页讲稿使用最新课程简介。
+
+逐页讲稿整份重新生成接口：
+
+```text
+POST http://127.0.0.1:8000/api/documents/{document_id}/lecture-notes/regenerate
+```
+
+该接口要求课程简介已经生成成功。接口提交后，后端会在后台按页码顺序重新生成全部页面讲稿。
+
+逐页讲稿单页重新生成接口：
+
+```text
+POST http://127.0.0.1:8000/api/documents/{document_id}/pages/{page_number}/lecture-notes/regenerate
+```
+
+该接口要求课程简介已经生成成功。接口提交后，后端只重新生成指定页的讲稿。
 
 文档重命名接口：
 
@@ -237,9 +267,11 @@ http://localhost:5173
 
 页面中也会显示 PDF 上传区域。选择 `.pdf` 文件并点击上传后，页面会显示上传成功和后端返回的 `document_id`。
 
-页面中还会显示 LLM 配置区域，可以修改 `LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL` 和请求超时时间，并可以点击测试按钮验证当前配置是否能成功调用模型。
+页面中还会显示 LLM 配置区域，可以修改 `LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL`、请求超时时间、课程简介 prompt 和逐页讲稿 prompt，并可以点击测试按钮验证当前配置是否能成功调用模型。
 
-页面中还会显示已上传文档列表。这个列表来自 SQLite 数据库，所以刷新网页后仍然会显示历史上传记录。列表中会显示文档解析状态和总页数，并提供重命名和删除按钮。
+所有 prompt 类设置在前端 WebUI 中都必须默认折叠显示，只露出设置名称和展开按钮。用户点击展开按钮后，前端才完整显示可编辑文本框；展开后的文本框必须直接显示全部 prompt 内容，不允许在文本框内部用滑轨滚动查看。再次点击同一个按钮后，文本框应重新折叠。后续新增逐页讲稿 prompt、问答 prompt 或其他 prompt setting 时，都需要遵守这个显示规则。
+
+页面中还会显示已上传文档列表。这个列表来自 SQLite 数据库，所以刷新网页后仍然会显示历史上传记录。列表中会显示文档解析状态、总页数和课程简介状态，并提供重命名、删除、重新生成简介、查看页面讲稿、重新生成全部讲稿和重新生成单页讲稿按钮。
 
 ## 当前任务验收
 
@@ -266,6 +298,18 @@ http://localhost:5173
 - 可以在 WebUI 中修改 LLM 配置。
 - 后端通过 `LLMClient` 封装统一的 OpenAI-compatible 文本和图文调用入口。
 - LLM 配置测试接口可以在配置正确时返回模型回答，在配置错误时返回明确错误。
+- 上传并解析 PDF 成功后，后端会在后台调用 LLM 生成课程简介。
+- `GET /api/documents` 会返回 `course_summary`、`course_summary_status` 和 `course_summary_error`。
+- 前端文档列表可以展示课程简介内容、生成中状态和失败原因。
+- 可以通过 WebUI 修改课程简介 prompt。
+- prompt 类设置在 WebUI 中默认折叠，点击展开后才能完整编辑，再次点击后折叠。
+- 可以通过重新生成接口重新生成某个文档的课程简介。
+- 课程简介生成成功后，后端会按页码顺序调用 LLM 为每一页生成讲稿。
+- `GET /api/documents/{document_id}/pages` 会返回 `lecture_notes`、`lecture_notes_status` 和 `lecture_notes_error`。
+- 前端文档列表可以展开查看每页讲稿状态、讲稿正文和失败原因。
+- 可以通过 WebUI 修改逐页讲稿 prompt。
+- 可以重新生成整份文档的逐页讲稿，也可以重新生成指定页讲稿。
+- 单页讲稿生成失败时，不影响其他页面讲稿继续生成或显示已有结果。
 - 空白页也会创建页面记录，不会被跳过。
 - PDF 损坏或无法打开时，文档状态会变为 `failed`，后端服务不会崩溃。
 - 可以通过 `PATCH /api/documents/{document_id}` 重命名文档显示标题。

@@ -218,6 +218,47 @@ h1 {
   resize: vertical;
 }
 
+.config-field .prompt-textarea {
+  min-height: 220px;
+  overflow: hidden;
+  resize: none;
+}
+
+.prompt-setting {
+  display: grid;
+  gap: 10px;
+}
+
+.prompt-setting-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.prompt-setting-header span {
+  color: #50607a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.prompt-toggle-button {
+  min-width: 72px;
+  padding: 7px 12px;
+  border: 1px solid #c7d2e3;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #2f466d;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.prompt-toggle-button:disabled {
+  color: #6b7688;
+  background: #f1f4f8;
+  cursor: not-allowed;
+}
+
 .config-field input:disabled,
 .config-field textarea:disabled {
   background: #f1f4f8;
@@ -434,6 +475,106 @@ h1 {
   border-radius: 8px;
   background: #fff7f6;
   color: #b42318;
+}
+
+.course-summary-box {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #d8e0ed;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.course-summary-box span {
+  margin: 0;
+  color: #50607a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.course-summary-box p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.course-summary-box button {
+  width: fit-content;
+}
+
+.lecture-notes-box {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #d8e0ed;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.lecture-notes-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.lecture-notes-header span {
+  color: #50607a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.lecture-notes-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.lecture-notes-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.lecture-notes-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lecture-notes-item {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #e0e6f0;
+  border-radius: 8px;
+  background: #fbfcff;
+}
+
+.lecture-notes-item-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.lecture-notes-item-header strong {
+  color: #1f2a3d;
+}
+
+.lecture-notes-item p,
+.lecture-notes-box p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.lecture-notes-item button {
+  width: fit-content;
 }
 
 .document-actions {
