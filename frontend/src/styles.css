@@ -8,14 +8,24 @@
   font-weight: 400;
 }
 
+html,
+#root {
+  height: 100%;
+}
+
 * {
   box-sizing: border-box;
 }
 
 body {
   min-width: 320px;
+  height: 100%;
   min-height: 100vh;
   margin: 0;
+}
+
+body:has(.app-shell--reader) {
+  overflow: hidden;
 }
 
 button,
@@ -27,17 +37,97 @@ textarea {
 .app-shell {
   min-height: 100vh;
   display: grid;
-  place-items: center;
-  padding: 32px;
+  align-items: start;
+  justify-items: center;
+  padding: 24px;
+}
+
+/* 文件页和设置页使用较宽的管理面板，避免文档列表被压缩成窄卡片。 */
+.app-shell--files,
+.app-shell--settings {
+  background: #edf2f8;
 }
 
 .status-panel {
-  width: min(720px, 100%);
+  width: min(1280px, 100%);
   padding: 32px;
   border: 1px solid #d8e0ed;
   border-radius: 8px;
   background: #ffffff;
   box-shadow: 0 18px 45px rgb(27 31 42 / 10%);
+}
+
+/* 普通页面头部放置标题和跨页面导航按钮。 */
+.app-page-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.app-page-header {
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.app-page-header .description {
+  margin-bottom: 0;
+}
+
+.app-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+/* 顶部工具按钮同时服务阅读页、文件页和设置页。 */
+.topbar-button {
+  min-height: 38px;
+  padding: 8px 14px;
+  border: 1px solid #c7d2e3;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #2f466d;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.topbar-button--primary {
+  border-color: #2f5fbd;
+  background: #2f5fbd;
+  color: #ffffff;
+}
+
+.topbar-button:disabled {
+  color: #7c8798;
+  background: #eef2f7;
+  cursor: not-allowed;
+}
+
+/* 文件页用横幅明确标出当前打开的文档。 */
+.current-document-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border: 1px solid #bfd0ee;
+  border-radius: 8px;
+  background: #f4f8ff;
+}
+
+.current-document-banner span {
+  color: #50607a;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.current-document-banner strong {
+  flex: 1 1 240px;
+  overflow-wrap: anywhere;
+  color: #1f2a3d;
 }
 
 .eyebrow {
@@ -308,6 +398,910 @@ h1 {
   cursor: not-allowed;
 }
 
+.app-shell--reader {
+  width: 100%;
+  height: 100vh;
+  min-height: 0;
+  align-items: stretch;
+  justify-items: stretch;
+  padding: 0;
+  overflow: hidden;
+  background: #dfe6ef;
+}
+
+.pdf-reader-panel {
+  width: min(1180px, 100%);
+  display: grid;
+  gap: 18px;
+  padding: 28px;
+  border: 1px solid #d8e0ed;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 18px 45px rgb(27 31 42 / 10%);
+}
+
+.pdf-reader-header {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.pdf-reader-header h1 {
+  overflow-wrap: anywhere;
+}
+
+.pdf-reader-header .description {
+  margin-bottom: 0;
+}
+
+/* 阅读页整体仿照 PowerPoint：顶部工具栏、中间工作区、底部问答栏。 */
+.reader-shell {
+  height: 100vh;
+  min-height: 0;
+  display: grid;
+  grid-template-areas:
+    "topbar"
+    "status"
+    "workspace"
+    "chat";
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 8px;
+  overflow: hidden;
+}
+
+.reader-shell--topbar-collapsed {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
+.reader-topbar {
+  grid-area: topbar;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(220px, auto);
+  gap: 12px;
+  align-items: center;
+  padding: 6px 10px;
+  border: 1px solid #c8d3e2;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 8px 22px rgb(27 31 42 / 10%);
+}
+
+.reader-collapsed-topbar {
+  grid-area: topbar;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 8px;
+  border: 1px solid #c8d3e2;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.reader-collapsed-title {
+  min-width: 0;
+  overflow: hidden;
+  color: #1f2a3d;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reader-collapsed-page {
+  color: #50607a;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.reader-main-actions,
+.reader-secondary-actions,
+.reader-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.reader-main-actions,
+.reader-secondary-actions {
+  min-width: 0;
+}
+
+.reader-topbar-left {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.reader-topbar-center {
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+}
+
+.reader-title-group {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+}
+
+.reader-title-group h1 {
+  max-width: min(260px, 34vw);
+  margin: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reader-kicker {
+  color: #4662a8;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.reader-progress-text {
+  min-width: 0;
+  max-width: min(460px, 36vw);
+  color: #4d5b70;
+  font-size: 13px;
+  font-weight: 700;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reader-status-stack {
+  grid-area: status;
+  min-height: 0;
+  max-height: 220px;
+  display: grid;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.reader-status-stack:empty {
+  display: none;
+}
+
+.reader-page-controls {
+  display: none;
+}
+
+.reader-generation-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  min-height: 0;
+  max-height: 58px;
+  overflow: hidden;
+  padding: 10px 12px;
+  border: 1px solid #d7e0ed;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.reader-generation-strip strong {
+  color: #1f2a3d;
+}
+
+.reader-generation-strip p {
+  margin: 0;
+  color: #566172;
+  max-width: 100%;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reader-workspace {
+  grid-area: workspace;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+}
+
+.pdf-reader-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.page-turn-button {
+  min-width: 112px;
+  min-height: 42px;
+  padding: 10px 18px;
+  border: 0;
+  border-radius: 8px;
+  background: #2f5fbd;
+  color: #ffffff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.page-turn-button:disabled {
+  background: #9aa8bd;
+  cursor: not-allowed;
+}
+
+.pdf-page-indicator {
+  min-width: 130px;
+  color: #1f2a3d;
+  font-weight: 700;
+  text-align: center;
+}
+
+.pdf-current-page-button {
+  min-width: 34px;
+  min-height: 30px;
+  padding: 3px 8px;
+  border: 1px solid #c7d2e3;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #2f5fbd;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.pdf-current-page-button:disabled {
+  color: #6b7688;
+  background: #f1f4f8;
+  cursor: not-allowed;
+}
+
+.pdf-page-input {
+  width: 64px;
+  min-height: 30px;
+  padding: 3px 8px;
+  border: 1px solid #2f5fbd;
+  border-radius: 8px;
+  color: #1f2a3d;
+  background: #ffffff;
+  font-weight: 800;
+  text-align: center;
+}
+
+.pdf-reader-message {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #c8d6ed;
+  border-radius: 8px;
+  background: #f4f8ff;
+  color: #2f466d;
+  font-weight: 700;
+}
+
+.pdf-reader-message--error {
+  border-color: #f0b7b2;
+  background: #fff7f6;
+  color: #b42318;
+}
+
+.pdf-reader-viewport {
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  padding: 10px;
+  border: 1px solid #ccd5e4;
+  border-radius: 8px;
+  background: #eef3f9;
+}
+
+.pdf-document {
+  height: 100%;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pdf-reader-content {
+  height: 100%;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--thumbnail-sidebar-width, 158px) 12px minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.pdf-reader-content:has(.course-summary-sidebar) {
+  grid-template-columns:
+    var(--thumbnail-sidebar-width, 158px)
+    12px
+    minmax(0, 1fr)
+    12px
+    var(--course-summary-sidebar-width, 320px);
+}
+
+.pdf-reader-content--resizing,
+.pdf-reader-content--resizing * {
+  cursor: col-resize;
+}
+
+.pdf-thumbnail-sidebar {
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  padding: 6px;
+  border: 1px solid #ccd5e4;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.pdf-thumbnail-resizer {
+  width: 12px;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, transparent 0 4px, #b8c5d9 4px 8px, transparent 8px 12px);
+  cursor: col-resize;
+}
+
+.pdf-thumbnail-resizer:hover,
+.pdf-reader-content--resizing .pdf-thumbnail-resizer {
+  background:
+    linear-gradient(90deg, transparent 0 4px, #2f5fbd 4px 8px, transparent 8px 12px);
+}
+
+.course-summary-resizer {
+  width: 12px;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, transparent 0 4px, #b8c5d9 4px 8px, transparent 8px 12px);
+  cursor: col-resize;
+}
+
+.course-summary-resizer:hover,
+.pdf-reader-content--resizing .course-summary-resizer {
+  background:
+    linear-gradient(90deg, transparent 0 4px, #2f5fbd 4px 8px, transparent 8px 12px);
+}
+
+.course-summary-sidebar {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #ccd5e4;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.course-summary-sidebar__header {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.course-summary-sidebar__header h2 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+
+.course-summary-close-button {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #c7d2e3;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #2f466d;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.course-summary-close-button:hover {
+  border-color: #9fb0c7;
+  background: #f4f8ff;
+}
+
+.course-summary-sidebar__content {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  gap: 10px;
+}
+
+.course-summary-sidebar__content p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.course-summary-sidebar .page-chat-history {
+  max-height: none;
+  min-height: 0;
+}
+
+.course-summary-sidebar .page-chat-form {
+  grid-template-columns: 1fr;
+}
+
+.course-summary-sidebar .page-chat-input-label textarea {
+  min-height: 96px;
+  max-height: 180px;
+}
+
+.course-summary-sidebar .page-chat-form .page-turn-button {
+  width: fit-content;
+}
+
+.course-summary-sidebar > .secondary-action-button {
+  width: fit-content;
+}
+
+.pdf-thumbnail-button {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  padding: 6px;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #50607a;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pdf-thumbnail-button span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdf-thumbnail-button:hover {
+  border-color: #aebcce;
+}
+
+.pdf-thumbnail-button--active {
+  border-color: #2f5fbd;
+  color: #193b80;
+  background: #eef4ff;
+}
+
+.pdf-thumbnail-button .react-pdf__Thumbnail {
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid #d8e0ed;
+  border-radius: 4px;
+  background: #ffffff;
+}
+
+.pdf-thumbnail-button canvas {
+  max-width: 100%;
+  height: auto !important;
+  display: block;
+}
+
+.pdf-thumbnail-loading {
+  display: grid;
+  place-items: center;
+  color: #647084;
+}
+
+.pdf-page-stage {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.pdf-page-stage .react-pdf__Page {
+  margin: 0;
+}
+
+.lecture-note-block {
+  position: absolute;
+  z-index: 20;
+  min-width: 120px;
+  min-height: 80px;
+}
+
+.lecture-note-block__shell {
+  position: relative;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid #d3a629;
+  border-radius: 8px;
+  background: rgb(255 252 232 / 92%);
+  box-shadow: 0 12px 28px rgb(72 64 34 / 18%);
+  color: #2f2a18;
+}
+
+.lecture-note-block__handle {
+  min-height: 38px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgb(211 166 41 / 55%);
+  background: rgb(255 244 184 / 94%);
+  cursor: move;
+  user-select: none;
+}
+
+.lecture-note-block__handle span {
+  font-weight: 800;
+}
+
+.lecture-note-block__regenerate {
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 1px solid #c99a1f;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #6f4b00;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.lecture-note-block__regenerate:disabled {
+  border-color: #d7cbb0;
+  background: #f5f0e2;
+  color: #8b8068;
+  cursor: not-allowed;
+}
+
+.lecture-note-block__content {
+  min-height: 0;
+  overflow: auto;
+  padding: 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+  font-size: 14px;
+}
+
+.lecture-note-block__resize-handle {
+  position: absolute;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.lecture-note-block__resize-handle--top,
+.lecture-note-block__resize-handle--bottom {
+  left: 12px;
+  right: 12px;
+  height: 10px;
+  cursor: ns-resize;
+}
+
+.lecture-note-block__resize-handle--top {
+  top: -5px;
+}
+
+.lecture-note-block__resize-handle--bottom {
+  bottom: -5px;
+}
+
+.lecture-note-block__resize-handle--left,
+.lecture-note-block__resize-handle--right {
+  top: 12px;
+  bottom: 12px;
+  width: 10px;
+  cursor: ew-resize;
+}
+
+.lecture-note-block__resize-handle--left {
+  left: -5px;
+}
+
+.lecture-note-block__resize-handle--right {
+  right: -5px;
+}
+
+.lecture-note-block__resize-handle--topLeft,
+.lecture-note-block__resize-handle--topRight,
+.lecture-note-block__resize-handle--bottomRight,
+.lecture-note-block__resize-handle--bottomLeft {
+  width: 14px;
+  height: 14px;
+}
+
+.lecture-note-block__resize-handle--topLeft {
+  top: -7px;
+  left: -7px;
+  cursor: nwse-resize;
+}
+
+.lecture-note-block__resize-handle--topRight {
+  top: -7px;
+  right: -7px;
+  cursor: nesw-resize;
+}
+
+.lecture-note-block__resize-handle--bottomRight {
+  right: -7px;
+  bottom: -7px;
+  cursor: nwse-resize;
+}
+
+.lecture-note-block__resize-handle--bottomLeft {
+  bottom: -7px;
+  left: -7px;
+  cursor: nesw-resize;
+}
+
+.react-pdf__Page {
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #ffffff;
+  box-shadow: 0 12px 32px rgb(27 31 42 / 16%);
+}
+
+.react-pdf__Page canvas {
+  max-width: 100%;
+  height: auto !important;
+  display: block;
+}
+
+.pdf-loading,
+.pdf-error {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: #50607a;
+  font-weight: 700;
+}
+
+.pdf-error {
+  color: #b42318;
+}
+
+.page-chat-panel {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #d8e0ed;
+  border-radius: 8px;
+  background: #fbfcff;
+}
+
+.reader-chat-dock {
+  grid-area: chat;
+  z-index: 25;
+  grid-template-columns: minmax(220px, 0.7fr) minmax(280px, 1fr) minmax(260px, 1fr);
+  align-items: end;
+  min-height: 0;
+  max-height: 190px;
+  overflow: hidden;
+  border-color: #bfcce0;
+  background: rgb(251 252 255 / 98%);
+  box-shadow: 0 -10px 26px rgb(27 31 42 / 12%);
+}
+
+.reader-chat-collapsed {
+  grid-area: chat;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 6px 8px;
+  border: 1px solid #bfcce0;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #50607a;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.reader-chat-dock .page-chat-header {
+  display: grid;
+  min-width: 0;
+}
+
+.reader-chat-dock .page-chat-history {
+  max-height: 126px;
+}
+
+.reader-chat-dock .page-chat-form {
+  align-self: stretch;
+}
+
+.reader-chat-dock .page-chat-input-label textarea {
+  min-height: 78px;
+  max-height: 118px;
+}
+
+.reader-chat-dock .page-chat-status {
+  grid-column: 1 / -1;
+}
+
+.page-chat-header {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.page-chat-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.page-chat-header h2 {
+  margin: 0 0 6px;
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+.page-chat-header p {
+  margin: 0;
+  color: #647084;
+}
+
+.page-chat-page-badge {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #e8eef8;
+  color: #35527e;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.page-chat-history {
+  max-height: 320px;
+  overflow: auto;
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #e0e6f0;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.page-chat-message {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid #d8e0ed;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.page-chat-message--assistant {
+  border-color: #b8d6c8;
+  background: #f2fbf6;
+}
+
+.page-chat-message__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.page-chat-message__meta strong {
+  color: #1f2a3d;
+}
+
+.page-chat-message__meta span {
+  color: #647084;
+  font-size: 13px;
+}
+
+.page-chat-message p,
+.page-chat-empty,
+.page-chat-status {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.page-chat-empty {
+  color: #647084;
+}
+
+.page-chat-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.page-chat-input-label {
+  display: grid;
+  gap: 8px;
+  color: #1f2a3d;
+  font-weight: 700;
+}
+
+.page-chat-input-label span {
+  color: #50607a;
+  font-size: 13px;
+}
+
+.page-chat-input-label textarea {
+  width: 100%;
+  min-height: 96px;
+  padding: 10px 12px;
+  border: 1px solid #b8c5d9;
+  border-radius: 8px;
+  color: #1b1f2a;
+  background: #ffffff;
+  resize: vertical;
+}
+
+.page-chat-input-label textarea:disabled {
+  background: #f1f4f8;
+  color: #6b7688;
+  cursor: not-allowed;
+}
+
+.page-chat-status {
+  padding: 10px 12px;
+  border: 1px solid #c8d6ed;
+  border-radius: 8px;
+  background: #f4f8ff;
+  color: #2f466d;
+  font-weight: 700;
+}
+
+.page-chat-status--error {
+  border-color: #f0b7b2;
+  background: #fff7f6;
+  color: #b42318;
+}
+
 .llm-config-message {
   min-height: 24px;
   color: #566172;
@@ -399,11 +1393,35 @@ h1 {
   background: #fbfcff;
 }
 
+.document-list-item--active {
+  border-color: #2f5fbd;
+  background: #f3f7ff;
+  box-shadow: inset 4px 0 0 #2f5fbd;
+}
+
 .document-header {
   display: flex;
   gap: 14px;
   align-items: flex-start;
   justify-content: space-between;
+}
+
+.document-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.document-active-badge {
+  width: fit-content;
+  margin-top: 0;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #e6f7ee;
+  color: #1f7a45;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .document-list-item strong {
@@ -467,6 +1485,32 @@ h1 {
 .document-status--processing {
   background: #fff7df;
   color: #8a5b00;
+}
+
+.generation-progress-box {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #d8e0ed;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.generation-progress-box strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #1f2a3d;
+}
+
+.generation-progress-box p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.generation-progress-box--compact {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  padding: 10px 12px;
 }
 
 .document-error {
@@ -611,6 +1655,43 @@ h1 {
   background: #c7362f;
 }
 
+.document-actions .lecture-notes-toggle-button {
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  min-height: 38px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: #d92d20;
+  box-shadow: inset 0 -2px 0 rgb(0 0 0 / 18%);
+}
+
+.document-actions .lecture-notes-toggle-button:disabled {
+  background: #d7a09b;
+  box-shadow: none;
+}
+
+.document-actions .lecture-notes-toggle-button__icon {
+  width: 13px;
+  height: 13px;
+  display: block;
+  margin: 0;
+  background: #ffffff;
+}
+
+.document-actions .lecture-notes-toggle-button__icon--resume {
+  width: 0;
+  height: 0;
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+  border-left: 13px solid #ffffff;
+  background: transparent;
+  transform: translateX(2px);
+}
+
 .rename-form {
   display: grid;
   gap: 10px;
@@ -649,13 +1730,174 @@ h1 {
   background: #f8fafc;
 }
 
+@media (max-width: 920px) {
+  .reader-topbar {
+    grid-template-columns: 1fr;
+  }
+
+  .reader-topbar-left {
+    grid-template-columns: 1fr;
+  }
+
+  .reader-title-group h1,
+  .reader-progress-text {
+    max-width: 100%;
+  }
+
+  .reader-collapsed-topbar {
+    grid-template-columns: 1fr;
+  }
+
+  .reader-main-actions,
+  .reader-secondary-actions {
+    justify-content: flex-start;
+  }
+
+  .reader-chat-dock {
+    grid-template-columns: 1fr;
+    max-height: 230px;
+  }
+
+  .reader-chat-dock .page-chat-history {
+    max-height: 96px;
+  }
+
+  .pdf-reader-viewport {
+    height: 100%;
+    max-height: none;
+    overflow: hidden;
+  }
+
+  .pdf-reader-content {
+    grid-template-rows: 126px minmax(0, 1fr);
+    grid-template-columns: 1fr;
+  }
+
+  .pdf-reader-content:has(.course-summary-sidebar) {
+    grid-template-rows: 126px minmax(160px, 28vh) minmax(0, 1fr);
+    grid-template-columns: 1fr;
+  }
+
+  .pdf-thumbnail-resizer {
+    display: none;
+  }
+
+  .course-summary-resizer {
+    display: none;
+  }
+
+  .course-summary-sidebar {
+    min-height: 0;
+  }
+
+  .pdf-thumbnail-sidebar {
+    height: 126px;
+    min-height: auto;
+    max-height: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    grid-auto-flow: column;
+    grid-auto-columns: 132px;
+    grid-template-columns: none;
+    padding: 8px;
+  }
+
+  .pdf-thumbnail-button {
+    width: 132px;
+  }
+}
+
 @media (max-width: 560px) {
   .app-shell {
-    padding: 16px;
+    padding: 12px;
   }
 
   .status-panel {
-    padding: 22px;
+    padding: 18px;
+  }
+
+  .app-page-header {
+    display: grid;
+  }
+
+  .app-page-actions,
+  .current-document-banner {
+    justify-content: flex-start;
+  }
+
+  .app-shell--reader {
+    padding: 0;
+  }
+
+  .reader-shell {
+    gap: 6px;
+    padding: 6px;
+  }
+
+  .reader-topbar,
+  .reader-generation-strip,
+  .reader-chat-dock {
+    border-radius: 8px;
+  }
+
+  .reader-title-group h1 {
+    font-size: 20px;
+  }
+
+  .pdf-reader-toolbar {
+    justify-content: stretch;
+  }
+
+  .page-turn-button,
+  .pdf-page-indicator {
+    width: 100%;
+  }
+
+  .pdf-reader-viewport {
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+    padding: 10px;
+  }
+
+  .pdf-reader-content {
+    grid-template-rows: 104px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .pdf-reader-content:has(.course-summary-sidebar) {
+    grid-template-rows: 104px minmax(140px, 26vh) minmax(0, 1fr);
+  }
+
+  .pdf-thumbnail-sidebar {
+    height: 104px;
+    grid-auto-columns: 112px;
+  }
+
+  .pdf-thumbnail-button {
+    width: 112px;
+  }
+
+  .reader-chat-dock {
+    max-height: 216px;
+  }
+
+  .reader-chat-collapsed {
+    flex-wrap: wrap;
+  }
+
+  .page-chat-header,
+  .page-chat-form {
+    grid-template-columns: 1fr;
+  }
+
+  .page-chat-header {
+    display: grid;
+  }
+
+  .page-chat-page-badge,
+  .page-chat-form .page-turn-button {
+    width: fit-content;
   }
 
   h1 {

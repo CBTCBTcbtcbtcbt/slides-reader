@@ -2,7 +2,7 @@
 
 这是一个 AI slides 阅读与授课工具。第一版目标是让用户上传 PDF slides，由 LLM 扮演老师生成课程简介、逐页讲稿，并支持针对当前页提问。
 
-当前仓库已完成任务 01 到任务 08。现在包含最小前后端通信能力、PDF 上传和本地保存能力、SQLite 文档记录持久化能力、PDF 页数和每页文字解析能力、每页 PNG 截图渲染能力、可在 WebUI 修改的 LLM 配置和统一 LLM 客户端、上传后自动生成课程简介的能力，以及课程简介完成后逐页生成讲稿的能力。不包含 PDF 阅读页、拖动讲稿文字块或当前页问答。
+当前仓库已完成任务 01 到任务 11。现在包含最小前后端通信能力、PDF 上传和本地保存能力、SQLite 文档记录持久化能力、PDF 页数和每页文字解析能力、每页 PNG 截图渲染能力、可在 WebUI 修改的 LLM 配置和统一 LLM 客户端、上传后自动生成课程简介的能力、课程简介完成后逐页生成讲稿的能力、PDF 阅读界面、可拖动讲稿文字块，以及按页独立保存的当前页问答能力。
 
 ## 技术栈
 
@@ -122,6 +122,10 @@ GET http://127.0.0.1:8000/api/documents/{document_id}/pages
 
 任务 08 起，该接口还会返回逐页讲稿字段：`lecture_notes`、`lecture_notes_status` 和 `lecture_notes_error`。`lecture_notes_status` 使用 `pending`、`processing`、`ready`、`failed` 表示等待生成、生成中、生成成功和生成失败。
 
+任务 10 起，该接口还会返回 `note_block`，用于保存当前页可拖动讲稿文字块的位置、尺寸和内容。
+
+任务 11 起，该接口还会返回 `chat_messages`，表示当前页独立问答历史。每条消息包含 `chat_message_id`、`page_id`、`role`、`content` 和 `created_at`。`role` 使用 `user` 表示学生问题，使用 `assistant` 表示 AI 老师回答。
+
 页面截图接口：
 
 ```text
@@ -159,11 +163,12 @@ PATCH http://127.0.0.1:8000/api/llm/config
   "model": "gpt-4.1-mini",
   "timeout_seconds": 60,
   "course_summary_prompt": "生成课程简介时使用的 prompt",
-  "lecture_notes_prompt": "生成逐页讲稿时使用的 prompt"
+  "lecture_notes_prompt": "生成逐页讲稿时使用的 prompt",
+  "page_chat_prompt": "当前页问答时使用的 prompt"
 }
 ```
 
-如果不传 `api_key` 字段，后端会保留之前保存的 API Key。课程简介 prompt 和逐页讲稿 prompt 也属于配置项，可以在 WebUI 中修改。所有 LLM 相关配置都必须能通过 WebUI 修改，环境变量只作为未保存配置时的默认值。
+如果不传 `api_key` 字段，后端会保留之前保存的 API Key。课程简介 prompt、逐页讲稿 prompt 和当前页问答 prompt 也属于配置项，可以在 WebUI 中修改。所有 LLM 相关配置都必须能通过 WebUI 修改，环境变量只作为未保存配置时的默认值。
 
 LLM 连接测试接口：
 
@@ -207,6 +212,38 @@ POST http://127.0.0.1:8000/api/documents/{document_id}/pages/{page_number}/lectu
 
 该接口要求课程简介已经生成成功。接口提交后，后端只重新生成指定页的讲稿。
 
+文档处理状态接口：
+
+```text
+GET http://127.0.0.1:8000/api/documents/{document_id}/status
+```
+
+该接口返回文档整体状态、课程简介状态、总页数、已生成讲稿页数、失败页数、等待页数、生成中页数，以及每一页的解析状态、讲稿状态和失败原因。前端会定期调用这个接口显示生成进度，并在后端返回 `should_poll` 为 `false` 后停止无意义轮询。
+
+按页面 ID 重新生成单页讲稿接口：
+
+```text
+POST http://127.0.0.1:8000/api/pages/{page_id}/regenerate
+```
+
+该接口要求课程简介已经生成成功。接口提交后，后端只重新生成这个 `page_id` 对应页面的讲稿，不会清空其他页面已经生成成功的讲稿。
+
+当前页问答接口：
+
+```text
+POST http://127.0.0.1:8000/api/pages/{page_id}/chat
+```
+
+请求体示例：
+
+```json
+{
+  "question": "请解释当前页这个公式的含义。"
+}
+```
+
+该接口会先把用户问题保存到 `chat_messages` 表，再把课程简介、当前页文字、当前页讲稿、当前页历史问答和最新问题一起发送给 LLM。LLM 成功回答后，后端会保存 `assistant` 消息，并返回当前页完整问答历史。如果 LLM 调用失败，用户问题仍然会保存在数据库中，前端会显示错误并恢复输入框。
+
 文档重命名接口：
 
 ```text
@@ -233,6 +270,8 @@ DELETE http://127.0.0.1:8000/api/documents/{document_id}
 
 - `documents` 中的文档记录。
 - `pages` 中关联的页面记录。
+- `note_blocks` 中关联的讲稿文字块记录。
+- `chat_messages` 中关联的当前页问答记录。
 - `storage/documents/` 中对应的本地 PDF 文件。
 
 如果本地 PDF 文件已经不存在，接口仍然会完成数据库删除。
@@ -267,11 +306,11 @@ http://localhost:5173
 
 页面中也会显示 PDF 上传区域。选择 `.pdf` 文件并点击上传后，页面会显示上传成功和后端返回的 `document_id`。
 
-页面中还会显示 LLM 配置区域，可以修改 `LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL`、请求超时时间、课程简介 prompt 和逐页讲稿 prompt，并可以点击测试按钮验证当前配置是否能成功调用模型。
+页面中还会显示 LLM 配置区域，可以修改 `LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL`、请求超时时间、课程简介 prompt、逐页讲稿 prompt 和当前页问答 prompt，并可以点击测试按钮验证当前配置是否能成功调用模型。
 
 所有 prompt 类设置在前端 WebUI 中都必须默认折叠显示，只露出设置名称和展开按钮。用户点击展开按钮后，前端才完整显示可编辑文本框；展开后的文本框必须直接显示全部 prompt 内容，不允许在文本框内部用滑轨滚动查看。再次点击同一个按钮后，文本框应重新折叠。后续新增逐页讲稿 prompt、问答 prompt 或其他 prompt setting 时，都需要遵守这个显示规则。
 
-页面中还会显示已上传文档列表。这个列表来自 SQLite 数据库，所以刷新网页后仍然会显示历史上传记录。列表中会显示文档解析状态、总页数和课程简介状态，并提供重命名、删除、重新生成简介、查看页面讲稿、重新生成全部讲稿和重新生成单页讲稿按钮。
+页面中还会显示已上传文档列表。这个列表来自 SQLite 数据库，所以刷新网页后仍然会显示历史上传记录。列表中会显示文档解析状态、总页数、课程简介状态和 AI 生成进度，并提供重命名、删除、重新生成简介、查看页面讲稿、重新生成全部讲稿和重新生成单页讲稿按钮。点击“阅读 PDF”后，阅读页会显示原始 PDF、缩略图、可拖动讲稿文字块、当前文档生成进度，以及当前页底部的问答区域。
 
 ## 当前任务验收
 
@@ -308,8 +347,16 @@ http://localhost:5173
 - `GET /api/documents/{document_id}/pages` 会返回 `lecture_notes`、`lecture_notes_status` 和 `lecture_notes_error`。
 - 前端文档列表可以展开查看每页讲稿状态、讲稿正文和失败原因。
 - 可以通过 WebUI 修改逐页讲稿 prompt。
+- 可以通过 WebUI 修改当前页问答 prompt。
 - 可以重新生成整份文档的逐页讲稿，也可以重新生成指定页讲稿。
 - 单页讲稿生成失败时，不影响其他页面讲稿继续生成或显示已有结果。
+- `GET /api/documents/{document_id}/status` 会返回文档、课程简介和每一页讲稿的生成进度。
+- 前端会自动刷新仍在生成中的文档进度，并在生成结束后停止轮询。
+- 页面讲稿失败时，前端会显示失败原因，并提供单页重试按钮。
+- 阅读页底部可以针对当前页向 AI 老师提问。
+- 当前页问答会保存到 `chat_messages` 表，刷新页面后仍然存在。
+- 切换页面后，只显示新页面自己的问答历史。
+- 当前页问答调用 LLM 失败时，用户问题不会丢失，前端会显示错误并恢复可输入状态。
 - 空白页也会创建页面记录，不会被跳过。
 - PDF 损坏或无法打开时，文档状态会变为 `failed`，后端服务不会崩溃。
 - 可以通过 `PATCH /api/documents/{document_id}` 重命名文档显示标题。
