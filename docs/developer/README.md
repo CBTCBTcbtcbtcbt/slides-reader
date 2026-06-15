@@ -18,14 +18,14 @@
 
 ## 当前版本定位
 
-当前项目是一个本地单用户的 AI slides 阅读与授课工具。用户上传 PDF slides 后，系统会完成以下流程：
+当前项目是一个本地单用户的 AI slides 阅读与授课工具。用户上传 PDF、PPT 或 PPTX slides 后，系统会完成以下流程：
 
-1. 保存原始 PDF 文件。
+1. 将上传文件统一保存或转换为系统实际使用的 PDF。
 2. 用 `PyMuPDF` 解析 PDF 页数和每页文字。
 3. 为每页渲染 PNG 截图。
 4. 使用 OpenAI-compatible LLM 生成课程简介。
 5. 在课程简介生成成功后，逐页生成老师讲稿。
-6. 在阅读器中展示原始 PDF、页面缩略图、可拖动讲稿文字块、课程简介侧栏和当前页问答。
+6. 在阅读器中展示系统实际使用的 PDF、页面缩略图、可拖动讲稿文字块、课程简介侧栏和当前页问答。
 7. 针对当前页保存独立问答历史。
 
 这里的 `LLM` 是 `Large Language Model` 的缩写，中文通常叫“大语言模型”。本项目中，LLM 的角色不是普通摘要工具，而是模拟老师讲课、解释知识点并回答学生问题。
@@ -83,5 +83,4 @@ slides-reader/
 - 后台任务使用 `FastAPI BackgroundTasks`，适合本地开发和轻量任务，不适合多进程、多用户或长时间任务队列。
 - LLM 请求使用标准库 `urllib.request`，没有使用 OpenAI 官方 SDK。
 - LLM 输出按普通 Markdown 文本保存，前端当前主要以纯文本换行方式展示，还没有完整 Markdown 和 LaTeX 渲染。
-- 当前只支持 PDF 上传，还没有支持 PPT/PPTX。
-
+- PPT/PPTX 上传通过 LibreOffice 同步转换为 PDF，后续流程继续围绕 PDF。

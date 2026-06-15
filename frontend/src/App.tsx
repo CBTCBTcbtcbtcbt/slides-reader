@@ -220,14 +220,14 @@ function App() {
   // message 用来显示给用户看的连接结果说明。
   const [message, setMessage] = useState("正在检查后端连接...");
 
-  // selectedFile 用来保存用户当前选择的 PDF 文件。
+  // selectedFile 用来保存用户当前选择的 slides 文件。
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   // uploadState 用来记录上传流程的当前状态。
   const [uploadState, setUploadState] = useState<UploadState>("idle");
 
   // uploadMessage 用来给用户展示上传成功或失败的说明。
-  const [uploadMessage, setUploadMessage] = useState("请选择一个 PDF 文件。");
+  const [uploadMessage, setUploadMessage] = useState("请选择一个 PDF/PPT/PPTX slides 文件。");
 
   // uploadedDocumentId 用来显示后端返回的 document_id。
   const [uploadedDocumentId, setUploadedDocumentId] = useState<string | null>(null);
@@ -270,7 +270,7 @@ function App() {
   // currentPdfPage 用来记录用户当前正在阅读第几页，页码从 1 开始。
   const [currentPdfPage, setCurrentPdfPage] = useState(1);
 
-  // totalPdfPages 用来记录 PDF.js 从原始 PDF 中读取到的总页数。
+  // totalPdfPages 用来记录 PDF.js 从系统实际使用的 PDF 中读取到的总页数。
   const [totalPdfPages, setTotalPdfPages] = useState(0);
 
   // isEditingPdfPage 用来控制页码数字是否切换成可输入状态。
@@ -756,7 +756,7 @@ function App() {
       const data = (await response.json()) as DocumentItem[];
 
       setDocuments(data);
-      setDocumentsMessage(data.length > 0 ? "" : "还没有上传过 PDF slides。");
+      setDocumentsMessage(data.length > 0 ? "" : "还没有上传过 slides 文件。");
       data.forEach((document) => {
         void loadDocumentStatus(document.document_id);
       });
@@ -1140,7 +1140,7 @@ function App() {
     setTotalPdfPages(0);
     setPdfPageNaturalSize(null);
     setReaderState("loading");
-    setReaderMessage("正在加载原始 PDF 文件...");
+    setReaderMessage("正在加载 slides PDF 文件...");
     void loadDocumentPages(document.document_id);
   }
 
@@ -1323,16 +1323,21 @@ function App() {
     if (!nextFile) {
       setSelectedFile(null);
       setUploadState("idle");
-      setUploadMessage("请选择一个 PDF 文件。");
+      setUploadMessage("请选择一个 PDF/PPT/PPTX slides 文件。");
       return;
     }
 
     // 前端先做一次后缀和类型检查，给用户更快的反馈。
     // 后端仍然会再次校验，不能只依赖前端校验。
-    if (!nextFile.name.toLowerCase().endsWith(".pdf") || nextFile.type !== "application/pdf") {
+    const supportedExtensions = [".pdf", ".ppt", ".pptx"];
+    const hasSupportedExtension = supportedExtensions.some((extension) =>
+      nextFile.name.toLowerCase().endsWith(extension),
+    );
+
+    if (!hasSupportedExtension) {
       setSelectedFile(null);
       setUploadState("error");
-      setUploadMessage("请选择 .pdf 格式的 slides 文件。");
+      setUploadMessage("请选择 .pdf、.ppt 或 .pptx 格式的 slides 文件。");
       return;
     }
 
@@ -1346,7 +1351,7 @@ function App() {
 
     if (!selectedFile) {
       setUploadState("error");
-      setUploadMessage("上传前需要先选择一个 PDF 文件。");
+      setUploadMessage("上传前需要先选择一个 PDF/PPT/PPTX slides 文件。");
       return;
     }
 
@@ -1355,7 +1360,7 @@ function App() {
     formData.append("file", selectedFile);
 
     setUploadState("uploading");
-    setUploadMessage("正在上传 PDF...");
+    setUploadMessage("正在上传 slides 文件...");
     setUploadedDocumentId(null);
 
     try {
@@ -1893,7 +1898,7 @@ function App() {
       documents.find((document) => document.document_id === activeReaderDocument.document_id) ??
       activeReaderDocument;
 
-    // fileUrl 指向后端新增的原始 PDF 文件接口，React-PDF 会直接从该地址加载并渲染。
+    // fileUrl 指向后端返回系统实际使用 PDF 的接口，React-PDF 会直接从该地址加载并渲染。
     const fileUrl = `/api/documents/${readerDocument.document_id}/file`;
 
     // PDF 页面按主工作区的宽高共同约束，保证不依赖主 PPT 区域滚动才能看完整页。
@@ -2444,7 +2449,7 @@ function App() {
             <p className="description">
               {visibleView === "settings"
                 ? "修改 LLM 配置，用于生成课程简介、逐页讲稿和当前页问答。"
-                : "上传、选择、重命名或删除 PDF slides。"}
+                : "上传、选择、重命名或删除 slides 文件。"}
             </p>
           </div>
           <div className="app-page-actions">
@@ -2481,7 +2486,7 @@ function App() {
             <strong>{connectionState === "checking" ? "正在连接后端" : message}</strong>
             <p>
               {connectionState === "success"
-                ? "现在可以上传 PDF slides。"
+                ? "现在可以上传 PDF/PPT/PPTX slides。"
                 : "请先启动后端，再刷新当前前端页面。"}
             </p>
           </div>
@@ -2502,13 +2507,17 @@ function App() {
         {visibleView === "files" ? (
         <form className="upload-panel" onSubmit={handleUploadSubmit}>
           <div>
-            <h2>上传 PDF slides</h2>
-            <p>请选择 `.pdf` 格式文件。上传成功后，页面会显示后端生成的 document_id。</p>
+            <h2>上传 slides</h2>
+            <p>请选择 `.pdf`、`.ppt` 或 `.pptx` 格式文件。上传成功后，后端会统一转换并使用 PDF。</p>
           </div>
 
           <label className="file-input-label">
-            <span>选择 PDF 文件</span>
-            <input type="file" accept="application/pdf,.pdf" onChange={handleFileChange} />
+            <span>选择 slides 文件</span>
+            <input
+              type="file"
+              accept="application/pdf,.pdf,.ppt,.pptx"
+              onChange={handleFileChange}
+            />
           </label>
 
           <button
@@ -2516,7 +2525,7 @@ function App() {
             type="submit"
             disabled={!selectedFile || uploadState === "uploading"}
           >
-            {uploadState === "uploading" ? "上传中..." : "上传 PDF"}
+            {uploadState === "uploading" ? "上传中..." : "上传 slides"}
           </button>
 
           <div className={`upload-message upload-message--${uploadState}`}>{uploadMessage}</div>
@@ -2817,7 +2826,7 @@ function App() {
                         onClick={() => openReader(document)}
                         disabled={isDocumentBusy(document.document_id) || document.page_count <= 0}
                       >
-                        阅读 PDF
+                        阅读 slides
                       </button>
                       <button
                         type="button"

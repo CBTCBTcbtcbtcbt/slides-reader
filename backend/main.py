@@ -4,7 +4,7 @@
 1. 创建一个 FastAPI 应用。
 2. 开放开发环境前端可以访问的 CORS 配置。
 3. 提供 `/api/health` 健康检查接口。
-4. 提供 PDF 文件上传接口，并把合法 PDF 保存到本地。
+4. 提供 PDF/PPT/PPTX 文件上传接口，并把内容统一保存为系统使用的 PDF。
 5. 使用 SQLite 持久保存上传文档记录。
 6. 使用 PyMuPDF 解析 PDF 页数、每页文字和每页截图。
 7. 提供可在 WebUI 修改的 LLM 配置，并封装统一 LLMClient。
@@ -14,6 +14,7 @@ import base64
 import json
 import math
 import sqlite3
+import subprocess
 import threading
 import urllib.error
 import urllib.request
@@ -43,13 +44,21 @@ DEFAULT_STORAGE_DIR = BASE_DIR.parent / "storage"
 # 这能让测试使用临时目录，不影响开发时正在使用的 storage 数据。
 STORAGE_DIR = Path(getenv("SLIDES_READER_STORAGE_DIR", str(DEFAULT_STORAGE_DIR))).resolve()
 
-# DOCUMENT_STORAGE_DIR 是 PDF 上传后的本地保存目录。
-# 当前任务会在保存原始 PDF 后同步解析页数、文字和页面截图。
+# DOCUMENT_STORAGE_DIR 是系统实际使用的 PDF 保存目录。
+# 对 PDF 上传会直接保存到这里；对 PPT/PPTX 上传会先转换成 PDF 再保存到这里。
 DOCUMENT_STORAGE_DIR = STORAGE_DIR / "documents"
+
+# CONVERSION_TEMP_DIR 是 PPT/PPTX 上传后的临时转换目录。
+# 原始 PPT/PPTX 只会短暂保存在这里，转换成 PDF 成功后会被删除。
+CONVERSION_TEMP_DIR = STORAGE_DIR / "conversion-tmp"
 
 # PAGE_IMAGE_STORAGE_DIR 是页面截图的本地保存目录。
 # 每个 PDF 页面会渲染成一张 PNG 图片，供前端和后续 LLM 视觉输入使用。
 PAGE_IMAGE_STORAGE_DIR = STORAGE_DIR / "pages"
+
+# LIBREOFFICE_PROFILE_DIR 是后端调用 LibreOffice 转换文件时使用的独立用户配置目录。
+# 这样可以降低命令行转换和用户桌面 LibreOffice 实例互相抢配置锁的概率。
+LIBREOFFICE_PROFILE_DIR = STORAGE_DIR / "libreoffice-profile"
 
 # DATABASE_PATH 是 SQLite 数据库文件路径。
 # SQLite 是本地文件数据库，适合当前阶段的单用户本地应用。
@@ -165,7 +174,7 @@ class LLMConfig:
 
 # LLM_DEFAULT_CONFIG 保存 LLM 配置的默认值。
 # 这些值会优先从环境变量读取，随后可以被 WebUI 写入的 SQLite 配置覆盖。
-DEFAULT_COURSE_SUMMARY_PROMPT = """你是一位经验丰富、讲解清晰的课程老师。请根据用户上传的 PDF slides 内容，生成一份面向学生的课程导读。
+DEFAULT_COURSE_SUMMARY_PROMPT = """你是一位经验丰富、讲解清晰的课程老师。请根据用户上传的 slides 内容，生成一份面向学生的课程导读。
 
 请用 Markdown 输出，必须包含以下部分：
 
@@ -291,7 +300,7 @@ def init_database() -> None:
     # 使用 with 语句打开连接，可以在代码块结束时自动关闭数据库连接。
     with sqlite3.connect(DATABASE_PATH) as connection:
         # 创建 documents 表；IF NOT EXISTS 表示表已存在时不重复创建。
-        # documents 表保存上传 PDF 的基本信息，后续任务会继续围绕 document_id 扩展页面数据。
+        # documents 表保存上传 slides 的基本信息，后续任务会继续围绕 document_id 扩展页面数据。
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS documents (
@@ -2348,10 +2357,10 @@ def list_documents() -> list[dict[str, str | int | None]]:
 
 @app.get("/api/documents/{document_id}/file")
 def read_document_file(document_id: str) -> FileResponse:
-    """返回某个文档对应的原始 PDF 文件。
+    """返回某个文档对应的系统实际使用的 PDF 文件。
 
     参数：
-        document_id：需要读取原始 PDF 的文档 ID。
+        document_id：需要读取 PDF 的文档 ID。
 
     返回值：
         FileResponse：找到文件时直接返回 PDF 文件内容，供前端 PDF 阅读器渲染。
@@ -2383,7 +2392,7 @@ def read_document_file(document_id: str) -> FileResponse:
     if not document_file_path.exists() or not document_file_path.is_file():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="原始 PDF 文件不存在，可能已经被手动删除。",
+            detail="PDF 文件不存在，可能已经被手动删除。",
         )
 
     # FileResponse 会让 FastAPI 直接读取并返回静态文件。
@@ -3294,7 +3303,7 @@ def delete_document(document_id: str) -> Response:
                 detail=f"数据库记录已删除，但本地 PDF 文件删除失败：{error}",
             ) from error
 
-    # 页面截图和原始 PDF 一样属于运行数据；如果文件已不存在，删除接口仍然算成功。
+    # 页面截图和系统使用的 PDF 一样属于运行数据；如果文件已不存在，删除接口仍然算成功。
     for page_image_path in page_image_paths:
         if page_image_path.exists():
             try:
@@ -3308,27 +3317,168 @@ def delete_document(document_id: str) -> Response:
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-def is_pdf_upload(file: UploadFile) -> bool:
-    """判断上传文件是否可以作为 PDF 接收。
+def get_upload_file_extension(file: UploadFile) -> str:
+    """读取上传文件的小写后缀名。
+
+    参数：
+        file：FastAPI 接收到的上传文件对象，里面包含原始文件名。
+
+    返回值：
+        str：包含点号的小写后缀名，例如 `.pdf`、`.ppt`、`.pptx`；没有文件名时返回空字符串。
+    """
+
+    # filename 可能为空，所以先使用空字符串兜底。
+    filename = file.filename or ""
+
+    # Path(...).suffix 会返回最后一个后缀，并保留开头的点号。
+    return Path(filename).suffix.lower()
+
+
+def is_supported_slides_upload(file: UploadFile) -> bool:
+    """判断上传文件是否是当前支持的 slides 格式。
 
     参数：
         file：FastAPI 接收到的上传文件对象，里面包含文件名、文件类型和文件内容读取方法。
 
     返回值：
-        bool：文件名后缀和 content-type 都符合 PDF 时返回 True，否则返回 False。
+        bool：文件名后缀是 `.pdf`、`.ppt` 或 `.pptx` 时返回 True，否则返回 False。
     """
 
-    # filename 可能为空，所以先使用空字符串兜底，避免调用 lower 方法时报错。
-    filename = file.filename or ""
+    # 浏览器对 PPT/PPTX 的 content-type 声明并不稳定，所以这里以后缀作为主校验。
+    return get_upload_file_extension(file) in {".pdf", ".ppt", ".pptx"}
 
-    # 后缀校验用于拦截明显不是 PDF 的文件名。
-    has_pdf_extension = filename.lower().endswith(".pdf")
 
-    # content-type 校验用于确认浏览器声明的文件类型是 PDF。
-    # 不同浏览器通常会为 PDF 设置 application/pdf。
-    has_pdf_content_type = file.content_type == "application/pdf"
+def resolve_soffice_path() -> Path | None:
+    """查找 LibreOffice 的 soffice.exe 路径。
 
-    return has_pdf_extension and has_pdf_content_type
+    返回值：
+        Path | None：找到时返回 soffice.exe 的绝对路径；找不到时返回 None。
+    """
+
+    # 候选路径按优先级排列：环境变量、项目内 Portable、系统安装路径。
+    candidate_paths = [
+        getenv("SLIDES_READER_SOFFICE_PATH", ""),
+        str(BASE_DIR.parent / "tools" / "libreoffice" / "LibreOfficePortable" / "App" / "libreoffice" / "program" / "soffice.exe"),
+        r"C:\Program Files\LibreOffice\program\soffice.exe",
+        r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+    ]
+
+    # 逐个检查候选路径，找到第一个存在的文件就返回。
+    for candidate_path in candidate_paths:
+        if not candidate_path:
+            continue
+
+        resolved_path = Path(candidate_path).resolve()
+        if resolved_path.exists() and resolved_path.is_file():
+            return resolved_path
+
+    # 如果用户已经把 soffice.exe 放进 PATH，也允许通过系统查找结果使用。
+    try:
+        command_result = subprocess.run(
+            ["where", "soffice.exe"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+    # where 可能返回多行，取第一条存在的路径。
+    for output_line in command_result.stdout.splitlines():
+        resolved_path = Path(output_line.strip()).resolve()
+        if resolved_path.exists() and resolved_path.is_file():
+            return resolved_path
+
+    return None
+
+
+def convert_slides_to_pdf(source_path: Path, output_pdf_path: Path) -> None:
+    """使用 LibreOffice 把 PPT/PPTX 转换成 PDF。
+
+    参数：
+        source_path：临时保存的原始 PPT/PPTX 文件路径。
+        output_pdf_path：转换成功后系统实际使用的 PDF 路径。
+
+    返回值：
+        None：转换成功时不返回数据，失败时抛出 HTTPException。
+    """
+
+    # 查找 LibreOffice 命令行入口；找不到时给出可执行的修复提示。
+    soffice_path = resolve_soffice_path()
+    if soffice_path is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="没有找到 LibreOffice 的 soffice.exe，无法转换 PPT/PPTX。请先运行项目根目录下的 setup-env.ps1，或设置 SLIDES_READER_SOFFICE_PATH。",
+        )
+
+    # 确保输出目录和 LibreOffice 独立 profile 目录存在。
+    output_pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    LIBREOFFICE_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+
+    # LibreOffice 使用 file URI 作为 UserInstallation 参数。
+    profile_uri = LIBREOFFICE_PROFILE_DIR.resolve().as_uri()
+
+    # LibreOffice 默认会按源文件名生成 PDF，因此先转换到源文件所在临时目录，再移动成 document_id.pdf。
+    conversion_output_path = source_path.with_suffix(".pdf")
+    if conversion_output_path.exists():
+        conversion_output_path.unlink()
+
+    # 组装命令行参数；--headless 表示不打开图形界面。
+    command = [
+        str(soffice_path),
+        f"-env:UserInstallation={profile_uri}",
+        "--headless",
+        "--nologo",
+        "--nodefault",
+        "--nofirststartwizard",
+        "--nolockcheck",
+        "--convert-to",
+        "pdf",
+        "--outdir",
+        str(source_path.parent),
+        str(source_path),
+    ]
+
+    try:
+        process = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="LibreOffice 转换 PPT/PPTX 超时，请确认文件没有损坏或过大。",
+        ) from error
+    except OSError as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"无法启动 LibreOffice 转换进程：{error}",
+        ) from error
+
+    # soffice.exe 在 Windows 上有时不会稳定返回退出码，所以优先检查 PDF 产物是否生成。
+    if not conversion_output_path.exists() or not conversion_output_path.is_file():
+        error_output = (process.stderr or process.stdout or "").strip()
+        if process.returncode not in (0, None):
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"LibreOffice 转换失败，退出码 {process.returncode}：{error_output or '没有返回错误详情'}",
+            )
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"LibreOffice 转换命令已执行，但没有生成 PDF：{error_output or '没有返回错误详情'}",
+        )
+
+    # 如果目标 PDF 已经存在，先删除再移动，避免旧文件残留。
+    if output_pdf_path.exists():
+        output_pdf_path.unlink()
+
+    # replace 会把临时输出 PDF 移动到系统统一使用的 documents 目录。
+    conversion_output_path.replace(output_pdf_path)
 
 
 @app.post("/api/documents", status_code=status.HTTP_201_CREATED)
@@ -3336,36 +3486,59 @@ async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
 ) -> dict[str, str | int | None]:
-    """接收用户上传的 PDF slides，并保存到本地 storage 目录。
+    """接收用户上传的 PDF/PPT/PPTX slides，并保存为系统实际使用的 PDF。
 
     参数：
-        file：前端通过 multipart/form-data 上传的 PDF 文件。
+        file：前端通过 multipart/form-data 上传的 PDF、PPT 或 PPTX 文件。
 
     返回值：
         dict[str, str | int | None]：包含文档记录、页数、错误信息和保存后的文件名。
     """
 
     # 先校验文件类型，不合格时直接返回 400，避免把错误文件写入 storage。
-    if not is_pdf_upload(file):
+    if not is_supported_slides_upload(file):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="只支持上传 PDF 文件，请选择 .pdf 格式的 slides。",
+            detail="只支持上传 PDF、PPT 或 PPTX 文件，请选择 .pdf、.ppt 或 .pptx 格式的 slides。",
         )
 
     # 为当前上传生成唯一 document_id，后续任务会用它关联页面、讲稿和问答记录。
     document_id = str(uuid4())
 
+    # 读取上传文件后缀，决定是直接保存 PDF 还是先转换 PPT/PPTX。
+    upload_extension = get_upload_file_extension(file)
+
     # 创建保存目录；parents=True 表示父目录不存在时一起创建。
     DOCUMENT_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
-    # 使用后端生成的 ID 作为文件名，避免用户原始文件名重复或包含不安全字符。
+    # 使用后端生成的 ID 作为最终 PDF 文件名，避免用户原始文件名重复或包含不安全字符。
     saved_filename = f"{document_id}.pdf"
     saved_path = DOCUMENT_STORAGE_DIR / saved_filename
 
-    # 读取上传内容并写入本地文件。
-    # 文件写入成功后，后续步骤会继续解析 PDF 并渲染每一页截图。
+    # 读取上传内容；后续会根据格式直接写入 PDF 或先写入临时 PPT/PPTX。
     file_bytes = await file.read()
-    saved_path.write_bytes(file_bytes)
+
+    if upload_extension == ".pdf":
+        # PDF 上传保持原有行为，直接保存为系统使用的 PDF。
+        saved_path.write_bytes(file_bytes)
+    else:
+        # PPT/PPTX 不长期保存原文件，只写入临时目录用于 LibreOffice 转换。
+        CONVERSION_TEMP_DIR.mkdir(parents=True, exist_ok=True)
+        temporary_source_path = CONVERSION_TEMP_DIR / f"{document_id}{upload_extension}"
+
+        try:
+            temporary_source_path.write_bytes(file_bytes)
+            convert_slides_to_pdf(
+                source_path=temporary_source_path,
+                output_pdf_path=saved_path,
+            )
+        finally:
+            # 原始 PPT/PPTX 只用于转换，转换成功或失败后都尽量删除。
+            if temporary_source_path.exists():
+                temporary_source_path.unlink()
+            temporary_pdf_path = temporary_source_path.with_suffix(".pdf")
+            if temporary_pdf_path.exists():
+                temporary_pdf_path.unlink()
 
     # created_at 使用 UTC 时间，方便后续不同地区或部署环境统一排序。
     created_at = datetime.now(UTC).isoformat()

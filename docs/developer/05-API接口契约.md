@@ -164,7 +164,7 @@ GET /api/documents
 
 排序规则：按 `created_at DESC` 返回，最新上传在前。
 
-## 上传 PDF
+## 上传 PDF/PPT/PPTX slides
 
 ```text
 POST /api/documents
@@ -174,7 +174,8 @@ POST /api/documents
 
 - `multipart/form-data`
 - 文件字段名：`file`
-- 只接受文件名后缀 `.pdf` 且 `content-type = application/pdf`
+- 只接受文件名后缀 `.pdf`、`.ppt` 或 `.pptx`
+- PPT/PPTX 会在后端通过 LibreOffice 转换为 PDF，后续存储和阅读都使用转换后的 PDF
 
 成功状态码：`201`
 
@@ -183,8 +184,8 @@ POST /api/documents
 ```json
 {
   "document_id": "string",
-  "title": "原始文件名.pdf",
-  "filename": "原始文件名.pdf",
+  "title": "原始文件名.pptx",
+  "filename": "原始文件名.pptx",
   "file_path": "C:\\...\\storage\\documents\\xxx.pdf",
   "saved_filename": "document_id.pdf",
   "status": "ready",
@@ -200,10 +201,19 @@ POST /api/documents
 
 后端行为：
 
-1. 保存 PDF。
-2. 创建 `documents` 记录。
-3. 同步解析 PDF 页面和截图。
-4. 如果解析成功，后台生成课程简介。
+1. 校验文件后缀。
+2. PDF 直接保存为 `{document_id}.pdf`。
+3. PPT/PPTX 先写入临时目录，再通过 LibreOffice 转换为 `{document_id}.pdf`，转换成功后删除临时原文件。
+4. 创建 `documents` 记录。
+5. 同步解析 PDF 页面和截图。
+6. 如果解析成功，后台生成课程简介。
+7. 如果转换或解析失败，返回明确错误或把文档状态置为 `failed`。
+
+常见错误：
+
+- `400`：文件后缀不是 `.pdf`、`.ppt` 或 `.pptx`。
+- `500`：没有找到 LibreOffice，无法转换 PPT/PPTX。
+- `500`：LibreOffice 转换失败、超时或没有生成 PDF。
 5. 如果解析失败，文档状态为 `failed`。
 
 常见错误：
@@ -211,7 +221,7 @@ POST /api/documents
 - `400`：不是合法 PDF。
 - `500`：PDF 已保存但无法读取文档记录等内部错误。
 
-## 读取原始 PDF 文件
+## 读取系统使用的 PDF 文件
 
 ```text
 GET /api/documents/{document_id}/file
@@ -219,7 +229,8 @@ GET /api/documents/{document_id}/file
 
 用途：
 
-- 阅读器通过 `react-pdf` 加载原始 PDF。
+- 阅读器通过 `react-pdf` 加载系统实际使用的 PDF。
+- 如果用户上传的是 PPT/PPTX，这里返回的是后端转换后的 PDF。
 
 成功响应：
 
@@ -764,7 +775,7 @@ DELETE /api/documents/{document_id}
 2. 检查 PDF 文件路径安全。
 3. 查询并检查所有截图路径安全。
 4. 删除数据库记录。
-5. 删除原始 PDF 文件。
+5. 删除系统实际使用的 PDF 文件。
 6. 删除页面截图文件。
 
 如果本地文件已经不存在，数据库删除仍然算成功。
@@ -774,4 +785,3 @@ DELETE /api/documents/{document_id}
 - `404`：文档不存在。
 - `500`：路径越界。
 - `500`：数据库已删除但本地文件删除失败。
-
