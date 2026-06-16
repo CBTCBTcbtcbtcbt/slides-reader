@@ -9,6 +9,7 @@ import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import type { DocumentItem, DocumentStatusResponse, PageItem } from "../../types/api";
 import type { DocumentActionState, LoadedPdfPage, ReaderRightSidebar, ReaderState } from "../../types/ui";
+import { MarkdownContent } from "../MarkdownContent";
 
 // React-PDF 依赖 PDF.js worker 在浏览器后台解析 PDF。
 // workerSrc 和 <Document>/<Page> 放在同一模块，避免模块执行顺序覆盖配置。
@@ -64,6 +65,7 @@ type ReaderViewProps = {
   onStartResizingThumbnailSidebar: (event: React.PointerEvent<HTMLButtonElement>) => void;
   onStartResizingCourseSummarySidebar: (event: React.PointerEvent<HTMLButtonElement>) => void;
   onRegenerateCourseSummary: (document: DocumentItem) => void;
+  onRegeneratePageLectureNotes: (document: DocumentItem, page: PageItem) => void;
 };
 
 export function ReaderView({
@@ -113,8 +115,19 @@ export function ReaderView({
   onStartResizingThumbnailSidebar,
   onStartResizingCourseSummarySidebar,
   onRegenerateCourseSummary,
+  onRegeneratePageLectureNotes,
 }: ReaderViewProps) {
   const fileUrl = `/api/documents/${readerDocument.document_id}/file`;
+  const isRegeneratingCurrentPageLectureNotes =
+    currentReaderPage !== undefined &&
+    documentActionState?.documentId === readerDocument.document_id &&
+    documentActionState.action === "regeneratingLectureNotes" &&
+    documentActionState.pageNumber === currentReaderPage.page_number;
+  const canRegenerateCurrentPageLectureNotes =
+    currentReaderPage !== undefined &&
+    readerDocument.course_summary_status === "ready" &&
+    Boolean(readerDocument.course_summary) &&
+    !isDocumentBusy(readerDocument.document_id);
 
   return (
     <main className="app-shell app-shell--reader">
@@ -172,6 +185,18 @@ export function ReaderView({
             </div>
             <div className="reader-topbar-center">{pageTurnControls}</div>
             <div className="reader-secondary-actions">
+              <button
+                type="button"
+                className="topbar-button"
+                onClick={() => {
+                  if (currentReaderPage) {
+                    onRegeneratePageLectureNotes(readerDocument, currentReaderPage);
+                  }
+                }}
+                disabled={!canRegenerateCurrentPageLectureNotes}
+              >
+                {isRegeneratingCurrentPageLectureNotes ? "提交中..." : "重生成本页讲稿"}
+              </button>
               <button type="button" className="topbar-button" onClick={onToggleCourseSummarySidebar}>
                 {readerRightSidebar === "summary" ? "收起简介" : "课程简介"}
               </button>
@@ -323,7 +348,7 @@ export function ReaderView({
                             <>
                               {readerDocument.course_summary_status === "ready" &&
                               readerDocument.course_summary ? (
-                                <p>{readerDocument.course_summary}</p>
+                                <MarkdownContent content={readerDocument.course_summary} />
                               ) : null}
                               {readerDocument.course_summary_status === "processing" ? (
                                 <p>课程简介正在生成，生成完成后会自动更新状态。</p>

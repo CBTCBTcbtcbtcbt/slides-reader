@@ -1,4 +1,5 @@
 import type { LLMConfigState } from "../../types/ui";
+import { MarkdownContent } from "../MarkdownContent";
 
 type SettingsViewProps = {
   llmConfigState: LLMConfigState;
@@ -230,7 +231,7 @@ export function SettingsView({
       {llmTestAnswer ? (
         <div className="llm-test-answer">
           <span>模型回答</span>
-          <p>{llmTestAnswer}</p>
+          <MarkdownContent content={llmTestAnswer} variant="compact" />
         </div>
       ) : null}
     </form>

@@ -1302,7 +1302,6 @@ function App() {
     const noteBlockElement = currentNoteBlock ? (
       <NoteBlock
         readerDocument={readerDocument}
-        currentReaderPage={currentReaderPage}
         noteBlock={currentNoteBlock}
         layout={
           currentNoteBlockLayout ?? {
@@ -1312,11 +1311,6 @@ function App() {
             height: currentNoteBlock.height,
           }
         }
-        isDocumentBusy={isDocumentBusy}
-        isPageLectureNotesBusy={isPageLectureNotesBusy}
-        onRegeneratePageLectureNotes={(document, page) => {
-          void regeneratePageLectureNotes(document, page);
-        }}
         onStartDrag={startNoteBlockDrag}
         onStartResize={startNoteBlockResize}
       />
@@ -1377,6 +1371,9 @@ function App() {
         onStartResizingCourseSummarySidebar={startResizingCourseSummarySidebar}
         onRegenerateCourseSummary={(document) => {
           void regenerateCourseSummary(document);
+        }}
+        onRegeneratePageLectureNotes={(document, page) => {
+          void regeneratePageLectureNotes(document, page);
         }}
       />
     );

@@ -35,25 +35,6 @@
   font-weight: 800;
 }
 
-.lecture-note-block__regenerate {
-  min-height: 28px;
-  padding: 4px 8px;
-  border: 1px solid #c99a1f;
-  border-radius: 6px;
-  background: #ffffff;
-  color: #6f4b00;
-  font-size: 12px;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.lecture-note-block__regenerate:disabled {
-  border-color: #d7cbb0;
-  background: #f5f0e2;
-  color: #8b8068;
-  cursor: not-allowed;
-}
-
 .lecture-note-block__content {
   min-height: 0;
   overflow: auto;

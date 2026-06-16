@@ -1,4 +1,5 @@
 import type { ChatMessageItem, PageItem } from "../../types/api";
+import { MarkdownContent } from "../MarkdownContent";
 
 type PageChatContentProps = {
   // currentReaderPage 是当前页数据；为空时显示加载提示。
@@ -43,7 +44,7 @@ export function PageChatContent({
                 <strong>{getChatRoleLabel(chatMessage.role)}</strong>
                 <span>{formatCreatedAt(chatMessage.created_at)}</span>
               </div>
-              <p>{chatMessage.content}</p>
+              <MarkdownContent content={chatMessage.content} variant="chat" />
             </article>
           ))
         ) : (

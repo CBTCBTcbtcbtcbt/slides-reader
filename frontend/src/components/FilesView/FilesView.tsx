@@ -1,5 +1,6 @@
 import type { DocumentItem, DocumentStatusResponse, PageItem } from "../../types/api";
 import type { DocumentActionState, UploadState } from "../../types/ui";
+import { MarkdownContent } from "../MarkdownContent";
 
 type FilesViewProps = {
   selectedFile: File | null;
@@ -320,7 +321,7 @@ export function FilesView({
                         {document.course_summary_status === "ready" && document.course_summary ? (
                           <>
                             <span>课程简介</span>
-                            <p>{document.course_summary}</p>
+                            <MarkdownContent content={document.course_summary} variant="compact" />
                             <button
                               type="button"
                               className="secondary-action-button"
@@ -442,7 +443,7 @@ export function FilesView({
                                       </span>
                                     </div>
                                     {page.lecture_notes_status === "ready" && page.lecture_notes ? (
-                                      <p>{page.lecture_notes}</p>
+                                      <MarkdownContent content={page.lecture_notes} variant="compact" />
                                     ) : null}
                                     {page.lecture_notes_status === "processing" ||
                                     page.lecture_notes_status === "pending" ? (
