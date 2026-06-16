@@ -1,0 +1,149 @@
+.page-chat-panel {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #d8e0ed;
+  border-radius: 8px;
+  background: #fbfcff;
+}
+.page-chat-header {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.page-chat-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.page-chat-header h2 {
+  margin: 0 0 6px;
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+.page-chat-header p {
+  margin: 0;
+  color: #647084;
+}
+
+.page-chat-page-badge {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #e8eef8;
+  color: #35527e;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.page-chat-history {
+  max-height: 320px;
+  overflow: auto;
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #e0e6f0;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.page-chat-message {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid #d8e0ed;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.page-chat-message--assistant {
+  border-color: #b8d6c8;
+  background: #f2fbf6;
+}
+
+.page-chat-message__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.page-chat-message__meta strong {
+  color: #1f2a3d;
+}
+
+.page-chat-message__meta span {
+  color: #647084;
+  font-size: 13px;
+}
+
+.page-chat-message p,
+.page-chat-empty,
+.page-chat-status {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.page-chat-empty {
+  color: #647084;
+}
+
+.page-chat-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.page-chat-input-label {
+  display: grid;
+  gap: 8px;
+  color: #1f2a3d;
+  font-weight: 700;
+}
+
+.page-chat-input-label span {
+  color: #50607a;
+  font-size: 13px;
+}
+
+.page-chat-input-label textarea {
+  width: 100%;
+  min-height: 96px;
+  padding: 10px 12px;
+  border: 1px solid #b8c5d9;
+  border-radius: 8px;
+  color: #1b1f2a;
+  background: #ffffff;
+  resize: vertical;
+}
+
+.page-chat-input-label textarea:disabled {
+  background: #f1f4f8;
+  color: #6b7688;
+  cursor: not-allowed;
+}
+
+.page-chat-status {
+  padding: 10px 12px;
+  border: 1px solid #c8d6ed;
+  border-radius: 8px;
+  background: #f4f8ff;
+  color: #2f466d;
+  font-weight: 700;
+}
+
+.page-chat-status--error {
+  border-color: #f0b7b2;
+  background: #fff7f6;
+  color: #b42318;
+}
+

@@ -1,0 +1,616 @@
+.app-shell--reader {
+  width: 100%;
+  height: 100vh;
+  min-height: 0;
+  align-items: stretch;
+  justify-items: stretch;
+  padding: 0;
+  overflow: hidden;
+  background: #dfe6ef;
+}
+
+.pdf-reader-panel {
+  width: min(1180px, 100%);
+  display: grid;
+  gap: 18px;
+  padding: 28px;
+  border: 1px solid #d8e0ed;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 18px 45px rgb(27 31 42 / 10%);
+}
+
+.pdf-reader-header {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.pdf-reader-header h1 {
+  overflow-wrap: anywhere;
+}
+
+.pdf-reader-header .description {
+  margin-bottom: 0;
+}
+
+/* 阅读页整体仿照 PowerPoint：顶部工具栏、中间工作区、底部问答栏。 */
+.reader-shell {
+  height: 100vh;
+  min-height: 0;
+  display: grid;
+  grid-template-areas:
+    "topbar"
+    "status"
+    "workspace"
+    "chat";
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 8px;
+  overflow: hidden;
+}
+
+.reader-shell--topbar-collapsed {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
+.reader-topbar {
+  grid-area: topbar;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(220px, auto);
+  gap: 12px;
+  align-items: center;
+  padding: 6px 10px;
+  border: 1px solid #c8d3e2;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 8px 22px rgb(27 31 42 / 10%);
+}
+
+.reader-collapsed-topbar {
+  grid-area: topbar;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 8px;
+  border: 1px solid #c8d3e2;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.reader-collapsed-title {
+  min-width: 0;
+  overflow: hidden;
+  color: #1f2a3d;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reader-collapsed-page {
+  color: #50607a;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.reader-main-actions,
+.reader-secondary-actions,
+.reader-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.reader-main-actions,
+.reader-secondary-actions {
+  min-width: 0;
+}
+
+.reader-topbar-left {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.reader-topbar-center {
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+}
+
+.reader-title-group {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+}
+
+.reader-title-group h1 {
+  max-width: min(260px, 34vw);
+  margin: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reader-kicker {
+  color: #4662a8;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.reader-progress-text {
+  min-width: 0;
+  max-width: min(460px, 36vw);
+  color: #4d5b70;
+  font-size: 13px;
+  font-weight: 700;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reader-status-stack {
+  grid-area: status;
+  min-height: 0;
+  max-height: 220px;
+  display: grid;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.reader-status-stack:empty {
+  display: none;
+}
+
+.reader-page-controls {
+  display: none;
+}
+
+.reader-generation-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  min-height: 0;
+  max-height: 58px;
+  overflow: hidden;
+  padding: 10px 12px;
+  border: 1px solid #d7e0ed;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.reader-generation-strip strong {
+  color: #1f2a3d;
+}
+
+.reader-generation-strip p {
+  margin: 0;
+  color: #566172;
+  max-width: 100%;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reader-workspace {
+  grid-area: workspace;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+}
+
+.pdf-reader-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.page-turn-button {
+  min-width: 112px;
+  min-height: 42px;
+  padding: 10px 18px;
+  border: 0;
+  border-radius: 8px;
+  background: #2f5fbd;
+  color: #ffffff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.page-turn-button:disabled {
+  background: #9aa8bd;
+  cursor: not-allowed;
+}
+
+.pdf-page-indicator {
+  min-width: 130px;
+  color: #1f2a3d;
+  font-weight: 700;
+  text-align: center;
+}
+
+.pdf-current-page-button {
+  min-width: 34px;
+  min-height: 30px;
+  padding: 3px 8px;
+  border: 1px solid #c7d2e3;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #2f5fbd;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.pdf-current-page-button:disabled {
+  color: #6b7688;
+  background: #f1f4f8;
+  cursor: not-allowed;
+}
+
+.pdf-page-input {
+  width: 64px;
+  min-height: 30px;
+  padding: 3px 8px;
+  border: 1px solid #2f5fbd;
+  border-radius: 8px;
+  color: #1f2a3d;
+  background: #ffffff;
+  font-weight: 800;
+  text-align: center;
+}
+
+.pdf-reader-message {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #c8d6ed;
+  border-radius: 8px;
+  background: #f4f8ff;
+  color: #2f466d;
+  font-weight: 700;
+}
+
+.pdf-reader-message--error {
+  border-color: #f0b7b2;
+  background: #fff7f6;
+  color: #b42318;
+}
+
+.pdf-reader-viewport {
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  padding: 10px;
+  border: 1px solid #ccd5e4;
+  border-radius: 8px;
+  background: #eef3f9;
+}
+
+.pdf-document {
+  height: 100%;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pdf-reader-content {
+  height: 100%;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--thumbnail-sidebar-width, 158px) 12px minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.pdf-reader-content:has(.course-summary-sidebar) {
+  grid-template-columns:
+    var(--thumbnail-sidebar-width, 158px)
+    12px
+    minmax(0, 1fr)
+    12px
+    var(--course-summary-sidebar-width, 320px);
+}
+
+.pdf-reader-content--resizing,
+.pdf-reader-content--resizing * {
+  cursor: col-resize;
+}
+
+.pdf-thumbnail-sidebar {
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  padding: 6px;
+  border: 1px solid #ccd5e4;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.pdf-thumbnail-resizer {
+  width: 12px;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, transparent 0 4px, #b8c5d9 4px 8px, transparent 8px 12px);
+  cursor: col-resize;
+}
+
+.pdf-thumbnail-resizer:hover,
+.pdf-reader-content--resizing .pdf-thumbnail-resizer {
+  background:
+    linear-gradient(90deg, transparent 0 4px, #2f5fbd 4px 8px, transparent 8px 12px);
+}
+
+.course-summary-resizer {
+  width: 12px;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, transparent 0 4px, #b8c5d9 4px 8px, transparent 8px 12px);
+  cursor: col-resize;
+}
+
+.course-summary-resizer:hover,
+.pdf-reader-content--resizing .course-summary-resizer {
+  background:
+    linear-gradient(90deg, transparent 0 4px, #2f5fbd 4px 8px, transparent 8px 12px);
+}
+
+.course-summary-sidebar {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #ccd5e4;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.course-summary-sidebar__header {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.course-summary-sidebar__header h2 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+
+.course-summary-close-button {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #c7d2e3;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #2f466d;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.course-summary-close-button:hover {
+  border-color: #9fb0c7;
+  background: #f4f8ff;
+}
+
+.course-summary-sidebar__content {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  gap: 10px;
+}
+
+.course-summary-sidebar__content p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.course-summary-sidebar .page-chat-history {
+  max-height: none;
+  min-height: 0;
+}
+
+.course-summary-sidebar .page-chat-form {
+  grid-template-columns: 1fr;
+}
+
+.course-summary-sidebar .page-chat-input-label textarea {
+  min-height: 96px;
+  max-height: 180px;
+}
+
+.course-summary-sidebar .page-chat-form .page-turn-button {
+  width: fit-content;
+}
+
+.course-summary-sidebar > .secondary-action-button {
+  width: fit-content;
+}
+
+.pdf-thumbnail-button {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  padding: 6px;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #50607a;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pdf-thumbnail-button span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdf-thumbnail-button:hover {
+  border-color: #aebcce;
+}
+
+.pdf-thumbnail-button--active {
+  border-color: #2f5fbd;
+  color: #193b80;
+  background: #eef4ff;
+}
+
+.pdf-thumbnail-button .react-pdf__Thumbnail {
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid #d8e0ed;
+  border-radius: 4px;
+  background: #ffffff;
+}
+
+.pdf-thumbnail-button canvas {
+  max-width: 100%;
+  height: auto !important;
+  display: block;
+}
+
+.pdf-thumbnail-loading {
+  display: grid;
+  place-items: center;
+  color: #647084;
+}
+
+.pdf-page-stage {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.pdf-page-stage .react-pdf__Page {
+  margin: 0;
+}
+
+.react-pdf__Page {
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #ffffff;
+  box-shadow: 0 12px 32px rgb(27 31 42 / 16%);
+}
+
+.react-pdf__Page canvas {
+  max-width: 100%;
+  height: auto !important;
+  display: block;
+}
+
+.pdf-loading,
+.pdf-error {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: #50607a;
+  font-weight: 700;
+}
+
+.pdf-error {
+  color: #b42318;
+}
+
+.reader-chat-dock {
+  grid-area: chat;
+  z-index: 25;
+  grid-template-columns: minmax(220px, 0.7fr) minmax(280px, 1fr) minmax(260px, 1fr);
+  align-items: end;
+  min-height: 0;
+  max-height: 190px;
+  overflow: hidden;
+  border-color: #bfcce0;
+  background: rgb(251 252 255 / 98%);
+  box-shadow: 0 -10px 26px rgb(27 31 42 / 12%);
+}
+
+.reader-chat-collapsed {
+  grid-area: chat;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 6px 8px;
+  border: 1px solid #bfcce0;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #50607a;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.reader-chat-dock .page-chat-header {
+  display: grid;
+  min-width: 0;
+}
+
+.reader-chat-dock .page-chat-history {
+  max-height: 126px;
+}
+
+.reader-chat-dock .page-chat-form {
+  align-self: stretch;
+}
+
+.reader-chat-dock .page-chat-input-label textarea {
+  min-height: 78px;
+  max-height: 118px;
+}
+
+.reader-chat-dock .page-chat-status {
+  grid-column: 1 / -1;
+}

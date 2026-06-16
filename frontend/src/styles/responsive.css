@@ -1,0 +1,182 @@
+@media (max-width: 920px) {
+  .reader-topbar {
+    grid-template-columns: 1fr;
+  }
+
+  .reader-topbar-left {
+    grid-template-columns: 1fr;
+  }
+
+  .reader-title-group h1,
+  .reader-progress-text {
+    max-width: 100%;
+  }
+
+  .reader-collapsed-topbar {
+    grid-template-columns: 1fr;
+  }
+
+  .reader-main-actions,
+  .reader-secondary-actions {
+    justify-content: flex-start;
+  }
+
+  .reader-chat-dock {
+    grid-template-columns: 1fr;
+    max-height: 230px;
+  }
+
+  .reader-chat-dock .page-chat-history {
+    max-height: 96px;
+  }
+
+  .pdf-reader-viewport {
+    height: 100%;
+    max-height: none;
+    overflow: hidden;
+  }
+
+  .pdf-reader-content {
+    grid-template-rows: 126px minmax(0, 1fr);
+    grid-template-columns: 1fr;
+  }
+
+  .pdf-reader-content:has(.course-summary-sidebar) {
+    grid-template-rows: 126px minmax(160px, 28vh) minmax(0, 1fr);
+    grid-template-columns: 1fr;
+  }
+
+  .pdf-thumbnail-resizer {
+    display: none;
+  }
+
+  .course-summary-resizer {
+    display: none;
+  }
+
+  .course-summary-sidebar {
+    min-height: 0;
+  }
+
+  .pdf-thumbnail-sidebar {
+    height: 126px;
+    min-height: auto;
+    max-height: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    grid-auto-flow: column;
+    grid-auto-columns: 132px;
+    grid-template-columns: none;
+    padding: 8px;
+  }
+
+  .pdf-thumbnail-button {
+    width: 132px;
+  }
+}
+
+@media (max-width: 560px) {
+  .app-shell {
+    padding: 12px;
+  }
+
+  .status-panel {
+    padding: 18px;
+  }
+
+  .app-page-header {
+    display: grid;
+  }
+
+  .app-page-actions,
+  .current-document-banner {
+    justify-content: flex-start;
+  }
+
+  .app-shell--reader {
+    padding: 0;
+  }
+
+  .reader-shell {
+    gap: 6px;
+    padding: 6px;
+  }
+
+  .reader-topbar,
+  .reader-generation-strip,
+  .reader-chat-dock {
+    border-radius: 8px;
+  }
+
+  .reader-title-group h1 {
+    font-size: 20px;
+  }
+
+  .pdf-reader-toolbar {
+    justify-content: stretch;
+  }
+
+  .page-turn-button,
+  .pdf-page-indicator {
+    width: 100%;
+  }
+
+  .pdf-reader-viewport {
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+    padding: 10px;
+  }
+
+  .pdf-reader-content {
+    grid-template-rows: 104px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .pdf-reader-content:has(.course-summary-sidebar) {
+    grid-template-rows: 104px minmax(140px, 26vh) minmax(0, 1fr);
+  }
+
+  .pdf-thumbnail-sidebar {
+    height: 104px;
+    grid-auto-columns: 112px;
+  }
+
+  .pdf-thumbnail-button {
+    width: 112px;
+  }
+
+  .reader-chat-dock {
+    max-height: 216px;
+  }
+
+  .reader-chat-collapsed {
+    flex-wrap: wrap;
+  }
+
+  .page-chat-header,
+  .page-chat-form {
+    grid-template-columns: 1fr;
+  }
+
+  .page-chat-header {
+    display: grid;
+  }
+
+  .page-chat-page-badge,
+  .page-chat-form .page-turn-button {
+    width: fit-content;
+  }
+
+  h1 {
+    font-size: 26px;
+  }
+
+  .document-header {
+    display: grid;
+  }
+
+  .document-actions {
+    justify-content: flex-start;
+  }
+}

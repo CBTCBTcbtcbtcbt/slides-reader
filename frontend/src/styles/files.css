@@ -1,0 +1,423 @@
+.upload-panel {
+  display: grid;
+  gap: 16px;
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid #e1e7f0;
+}
+
+.upload-panel h2 {
+  margin: 0 0 6px;
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.upload-panel p {
+  margin: 0;
+  color: #647084;
+}
+
+.file-input-label {
+  display: grid;
+  gap: 8px;
+  color: #1f2a3d;
+  font-weight: 700;
+}
+
+.file-input-label input {
+  width: 100%;
+  padding: 12px;
+  border: 1px dashed #aab8cc;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.upload-button {
+  width: fit-content;
+  min-width: 128px;
+  padding: 11px 18px;
+  border: 0;
+  border-radius: 8px;
+  color: #ffffff;
+  background: #2f5fbd;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.upload-button:disabled {
+  background: #9aa8bd;
+  cursor: not-allowed;
+}
+
+.upload-message {
+  min-height: 24px;
+  color: #566172;
+}
+
+.upload-message--success {
+  color: #1f7a45;
+  font-weight: 700;
+}
+
+.upload-message--error {
+  color: #b42318;
+  font-weight: 700;
+}
+
+.document-id-box {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid #bfd0ee;
+  border-radius: 8px;
+  background: #f4f8ff;
+}
+
+.document-id-box span {
+  color: #50607a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.document-id-box code {
+  overflow-wrap: anywhere;
+  color: #193b80;
+}
+
+.documents-panel {
+  display: grid;
+  gap: 16px;
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid #e1e7f0;
+}
+
+.documents-panel h2 {
+  margin: 0 0 6px;
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.documents-panel p {
+  margin: 0;
+  color: #647084;
+}
+
+.document-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.document-list-item {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #d8e0ed;
+  border-radius: 8px;
+  background: #fbfcff;
+}
+
+.document-list-item--active {
+  border-color: #2f5fbd;
+  background: #f3f7ff;
+  box-shadow: inset 4px 0 0 #2f5fbd;
+}
+
+.document-header {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.document-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.document-active-badge {
+  width: fit-content;
+  margin-top: 0;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #e6f7ee;
+  color: #1f7a45;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.document-list-item strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.document-list-item span {
+  display: block;
+  margin-top: 4px;
+  color: #647084;
+  font-size: 14px;
+}
+
+.document-list-item dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.document-list-item dl div {
+  display: grid;
+  gap: 4px;
+}
+
+.document-list-item dt {
+  color: #50607a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.document-list-item dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #1f2a3d;
+}
+
+.generation-progress-box {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #d8e0ed;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.generation-progress-box strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #1f2a3d;
+}
+
+.generation-progress-box p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.generation-progress-box--compact {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  padding: 10px 12px;
+}
+
+.course-summary-box {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #d8e0ed;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.course-summary-box span {
+  margin: 0;
+  color: #50607a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.course-summary-box p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.course-summary-box button {
+  width: fit-content;
+}
+
+.lecture-notes-box {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #d8e0ed;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.lecture-notes-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.lecture-notes-header span {
+  color: #50607a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.lecture-notes-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.lecture-notes-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.lecture-notes-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lecture-notes-item {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #e0e6f0;
+  border-radius: 8px;
+  background: #fbfcff;
+}
+
+.lecture-notes-item-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.lecture-notes-item-header strong {
+  color: #1f2a3d;
+}
+
+.lecture-notes-item p,
+.lecture-notes-box p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.lecture-notes-item button {
+  width: fit-content;
+}
+
+.document-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.document-actions button {
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: #2f5fbd;
+  color: #ffffff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.document-actions button:disabled {
+  background: #9aa8bd;
+  cursor: not-allowed;
+}
+
+.document-actions .secondary-button {
+  border: 1px solid #c7d2e3;
+  background: #ffffff;
+  color: #2f466d;
+}
+
+.document-actions .danger-button {
+  background: #c7362f;
+}
+
+.document-actions .lecture-notes-toggle-button {
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  min-height: 38px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: #d92d20;
+  box-shadow: inset 0 -2px 0 rgb(0 0 0 / 18%);
+}
+
+.document-actions .lecture-notes-toggle-button:disabled {
+  background: #d7a09b;
+  box-shadow: none;
+}
+
+.document-actions .lecture-notes-toggle-button__icon {
+  width: 13px;
+  height: 13px;
+  display: block;
+  margin: 0;
+  background: #ffffff;
+}
+
+.document-actions .lecture-notes-toggle-button__icon--resume {
+  width: 0;
+  height: 0;
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+  border-left: 13px solid #ffffff;
+  background: transparent;
+  transform: translateX(2px);
+}
+
+.rename-form {
+  display: grid;
+  gap: 10px;
+  min-width: min(360px, 100%);
+}
+
+.rename-form label {
+  display: grid;
+  gap: 6px;
+  color: #50607a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.rename-form input {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid #b8c5d9;
+  border-radius: 8px;
+  color: #1b1f2a;
+}
+
+.document-action-message {
+  padding: 10px 12px;
+  border: 1px solid #c8d6ed;
+  border-radius: 8px;
+  background: #f4f8ff;
+  color: #2f466d;
+  font-weight: 700;
+}
+
+.documents-empty {
+  padding: 14px;
+  border: 1px dashed #ccd5e4;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+

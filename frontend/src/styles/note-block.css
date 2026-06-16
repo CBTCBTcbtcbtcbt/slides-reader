@@ -1,0 +1,137 @@
+.lecture-note-block {
+  position: absolute;
+  z-index: 20;
+  min-width: 120px;
+  min-height: 80px;
+}
+
+.lecture-note-block__shell {
+  position: relative;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid #d3a629;
+  border-radius: 8px;
+  background: rgb(255 252 232 / 92%);
+  box-shadow: 0 12px 28px rgb(72 64 34 / 18%);
+  color: #2f2a18;
+}
+
+.lecture-note-block__handle {
+  min-height: 38px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgb(211 166 41 / 55%);
+  background: rgb(255 244 184 / 94%);
+  cursor: move;
+  user-select: none;
+}
+
+.lecture-note-block__handle span {
+  font-weight: 800;
+}
+
+.lecture-note-block__regenerate {
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 1px solid #c99a1f;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #6f4b00;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.lecture-note-block__regenerate:disabled {
+  border-color: #d7cbb0;
+  background: #f5f0e2;
+  color: #8b8068;
+  cursor: not-allowed;
+}
+
+.lecture-note-block__content {
+  min-height: 0;
+  overflow: auto;
+  padding: 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+  font-size: 14px;
+}
+
+.lecture-note-block__resize-handle {
+  position: absolute;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.lecture-note-block__resize-handle--top,
+.lecture-note-block__resize-handle--bottom {
+  left: 12px;
+  right: 12px;
+  height: 10px;
+  cursor: ns-resize;
+}
+
+.lecture-note-block__resize-handle--top {
+  top: -5px;
+}
+
+.lecture-note-block__resize-handle--bottom {
+  bottom: -5px;
+}
+
+.lecture-note-block__resize-handle--left,
+.lecture-note-block__resize-handle--right {
+  top: 12px;
+  bottom: 12px;
+  width: 10px;
+  cursor: ew-resize;
+}
+
+.lecture-note-block__resize-handle--left {
+  left: -5px;
+}
+
+.lecture-note-block__resize-handle--right {
+  right: -5px;
+}
+
+.lecture-note-block__resize-handle--topLeft,
+.lecture-note-block__resize-handle--topRight,
+.lecture-note-block__resize-handle--bottomRight,
+.lecture-note-block__resize-handle--bottomLeft {
+  width: 14px;
+  height: 14px;
+}
+
+.lecture-note-block__resize-handle--topLeft {
+  top: -7px;
+  left: -7px;
+  cursor: nwse-resize;
+}
+
+.lecture-note-block__resize-handle--topRight {
+  top: -7px;
+  right: -7px;
+  cursor: nesw-resize;
+}
+
+.lecture-note-block__resize-handle--bottomRight {
+  right: -7px;
+  bottom: -7px;
+  cursor: nwse-resize;
+}
+
+.lecture-note-block__resize-handle--bottomLeft {
+  bottom: -7px;
+  left: -7px;
+  cursor: nesw-resize;
+}
+

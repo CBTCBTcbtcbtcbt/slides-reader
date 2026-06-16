@@ -11,7 +11,8 @@
   "dependencies": {
     "react": "latest",
     "react-dom": "latest",
-    "react-pdf": "^10.4.1"
+    "react-pdf": "^10.4.1",
+    "react-router-dom": "^7.18.0"
   },
   "devDependencies": {
     "@types/react": "latest",
