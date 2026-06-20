@@ -157,15 +157,21 @@ def get_document_status_page_rows(document_id: str):
         return connection.execute(
             """
             SELECT
-                id,
-                page_number,
-                status,
-                error_message,
-                lecture_notes_status,
-                lecture_notes_error
+                pages.id,
+                pages.page_number,
+                pages.status,
+                pages.error_message,
+                pages.lecture_notes,
+                CASE
+                    WHEN lecture_notes_queue.status = 'waiting' THEN 'pending'
+                    WHEN lecture_notes_queue.status = 'processing' THEN 'processing'
+                    ELSE pages.lecture_notes_status
+                END AS lecture_notes_status,
+                pages.lecture_notes_error
             FROM pages
-            WHERE document_id = ?
-            ORDER BY page_number ASC
+            LEFT JOIN lecture_notes_queue ON lecture_notes_queue.page_id = pages.id
+            WHERE pages.document_id = ?
+            ORDER BY pages.page_number ASC
             """,
             (document_id,),
         ).fetchall()
@@ -201,7 +207,7 @@ def list_document_pages_with_blocks_and_chat(document_id: str) -> list[dict[str,
                 lecture_notes_error,
                 created_at
             FROM pages
-            WHERE document_id = ?
+            WHERE pages.document_id = ?
             ORDER BY page_number ASC
             """,
             (document_id,),
@@ -223,7 +229,11 @@ def list_document_pages_with_blocks_and_chat(document_id: str) -> list[dict[str,
                 pages.status,
                 pages.error_message,
                 pages.lecture_notes,
-                pages.lecture_notes_status,
+                CASE
+                    WHEN lecture_notes_queue.status = 'waiting' THEN 'pending'
+                    WHEN lecture_notes_queue.status = 'processing' THEN 'processing'
+                    ELSE pages.lecture_notes_status
+                END AS lecture_notes_status,
                 pages.lecture_notes_error,
                 pages.created_at,
                 note_blocks.id AS note_block_id,
@@ -237,6 +247,7 @@ def list_document_pages_with_blocks_and_chat(document_id: str) -> list[dict[str,
                 note_blocks.updated_at AS note_block_updated_at
             FROM pages
             LEFT JOIN note_blocks ON note_blocks.page_id = pages.id
+            LEFT JOIN lecture_notes_queue ON lecture_notes_queue.page_id = pages.id
             WHERE pages.document_id = ?
             ORDER BY pages.page_number ASC
             """,
@@ -320,6 +331,45 @@ def list_pages_for_lecture_notes(document_id: str):
         ).fetchall()
 
     return pages
+
+
+def list_all_pages_for_lecture_notes_queue(document_id: str):
+    """读取指定文档所有页面，用于重新生成全部讲稿时入队。"""
+
+    with get_database_connection() as connection:
+        return connection.execute(
+            """
+            SELECT
+                id,
+                document_id,
+                page_number
+            FROM pages
+            WHERE document_id = ?
+            ORDER BY page_number ASC
+            """,
+            (document_id,),
+        ).fetchall()
+
+
+def list_pages_without_lecture_notes_for_queue(document_id: str):
+    """读取还没有可用讲稿且尚未入队的页面，用于补齐剩余讲稿队列。"""
+
+    with get_database_connection() as connection:
+        return connection.execute(
+            """
+            SELECT
+                pages.id,
+                pages.document_id,
+                pages.page_number
+            FROM pages
+            LEFT JOIN lecture_notes_queue ON lecture_notes_queue.page_id = pages.id
+            WHERE pages.document_id = ?
+              AND (pages.lecture_notes IS NULL OR TRIM(pages.lecture_notes) = '')
+              AND lecture_notes_queue.id IS NULL
+            ORDER BY pages.page_number ASC
+            """,
+            (document_id,),
+        ).fetchall()
 
 
 def get_page_for_lecture_notes(document_id: str, page_number: int):

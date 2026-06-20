@@ -33,6 +33,7 @@ type ReaderViewProps = {
   pageTurnControls: ReactNode;
   pageChatContent: ReactNode;
   pageChatStatus: ReactNode;
+  noteSidebarContent: ReactNode;
   noteBlockElement: ReactNode;
   pdfPageWidth: number | undefined;
   thumbnailRenderWidth: number;
@@ -55,6 +56,7 @@ type ReaderViewProps = {
   onCollapseTopbar: () => void;
   onExpandTopbar: () => void;
   onCloseRightSidebar: () => void;
+  onToggleNoteSidebar: () => void;
   onOpenChatSidebar: () => void;
   onSetReaderChatCollapsed: (isCollapsed: boolean) => void;
   onGoToPdfPage: (pageNumber: number) => void;
@@ -83,6 +85,7 @@ export function ReaderView({
   pageTurnControls,
   pageChatContent,
   pageChatStatus,
+  noteSidebarContent,
   noteBlockElement,
   pdfPageWidth,
   thumbnailRenderWidth,
@@ -105,6 +108,7 @@ export function ReaderView({
   onCollapseTopbar,
   onExpandTopbar,
   onCloseRightSidebar,
+  onToggleNoteSidebar,
   onOpenChatSidebar,
   onSetReaderChatCollapsed,
   onGoToPdfPage,
@@ -196,6 +200,9 @@ export function ReaderView({
                 disabled={!canRegenerateCurrentPageLectureNotes}
               >
                 {isRegeneratingCurrentPageLectureNotes ? "提交中..." : "重生成本页讲稿"}
+              </button>
+              <button type="button" className="topbar-button" onClick={onToggleNoteSidebar}>
+                {readerRightSidebar === "note" ? "收起讲稿" : "本页讲稿"}
               </button>
               <button type="button" className="topbar-button" onClick={onToggleCourseSummarySidebar}>
                 {readerRightSidebar === "summary" ? "收起简介" : "课程简介"}
@@ -315,12 +322,26 @@ export function ReaderView({
                       />
 
                       <aside
-                        className="course-summary-sidebar"
-                        aria-label={readerRightSidebar === "summary" ? "课程简介" : "当前页问答"}
+                        className={`course-summary-sidebar${
+                          readerRightSidebar === "chat" ? " course-summary-sidebar--chat" : ""
+                        }`}
+                        aria-label={
+                          readerRightSidebar === "summary"
+                            ? "课程简介"
+                            : readerRightSidebar === "note"
+                              ? "本页讲稿"
+                              : "当前页问答"
+                        }
                       >
                         <div className="course-summary-sidebar__header">
                           <div>
-                            <h2>{readerRightSidebar === "summary" ? "课程简介" : "当前页问答"}</h2>
+                            <h2>
+                              {readerRightSidebar === "summary"
+                                ? "课程简介"
+                                : readerRightSidebar === "note"
+                                  ? "本页讲稿"
+                                  : "当前页问答"}
+                            </h2>
                             {readerRightSidebar === "summary" ? (
                               <span
                                 className={`document-status document-status--${readerDocument.course_summary_status}`}
@@ -362,6 +383,8 @@ export function ReaderView({
                                 </p>
                               ) : null}
                             </>
+                          ) : readerRightSidebar === "note" ? (
+                            noteSidebarContent
                           ) : (
                             pageChatContent
                           )}
@@ -381,9 +404,9 @@ export function ReaderView({
                                 ? "生成简介"
                                 : "重新生成简介"}
                           </button>
-                        ) : (
+                        ) : readerRightSidebar === "chat" ? (
                           pageChatStatus
-                        )}
+                        ) : null}
                       </aside>
                     </>
                   ) : null}

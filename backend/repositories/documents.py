@@ -376,6 +376,21 @@ def delete_document_records(document_id: str) -> None:
 
     with get_database_connection() as connection:
         connection.execute(
+            "DELETE FROM lecture_notes_queue WHERE document_id = ?",
+            (document_id,),
+        )
+        connection.execute(
+            """
+            DELETE FROM chat_attachments
+            WHERE page_id IN (
+                SELECT id
+                FROM pages
+                WHERE document_id = ?
+            )
+            """,
+            (document_id,),
+        )
+        connection.execute(
             """
             DELETE FROM chat_messages
             WHERE page_id IN (

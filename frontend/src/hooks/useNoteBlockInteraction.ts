@@ -21,17 +21,19 @@ type UseNoteBlockInteractionOptions = {
 type UseNoteBlockInteractionResult = {
   draftNoteBlockLayouts: Record<string, NoteBlockLayout>;
   setDraftNoteBlockLayouts: React.Dispatch<React.SetStateAction<Record<string, NoteBlockLayout>>>;
-  resolveNoteBlockLayout: (noteBlock: NoteBlockItem) => NoteBlockLayout;
+  resolveNoteBlockLayout: (noteBlock: NoteBlockItem, layoutKey?: string) => NoteBlockLayout;
   startNoteBlockDrag: (
     event: React.PointerEvent<HTMLDivElement>,
     documentId: string,
     noteBlock: NoteBlockItem,
+    layoutKey?: string,
   ) => void;
   startNoteBlockResize: (
     event: React.PointerEvent<HTMLButtonElement>,
     documentId: string,
     noteBlock: NoteBlockItem,
     resizeDirection: NoteBlockResizeDirection,
+    layoutKey?: string,
   ) => void;
 };
 
@@ -41,15 +43,15 @@ export function useNoteBlockInteraction(
   const [draftNoteBlockLayouts, setDraftNoteBlockLayouts] = useState<Record<string, NoteBlockLayout>>({});
   const [noteBlockInteraction, setNoteBlockInteraction] = useState<NoteBlockInteraction | null>(null);
 
-  function updateDraftNoteBlockLayout(noteBlockId: string, nextLayout: NoteBlockLayout) {
+  function updateDraftNoteBlockLayout(layoutKey: string, nextLayout: NoteBlockLayout) {
     setDraftNoteBlockLayouts((currentLayouts) => ({
       ...currentLayouts,
-      [noteBlockId]: nextLayout,
+      [layoutKey]: nextLayout,
     }));
   }
 
-  function resolveNoteBlockLayout(noteBlock: NoteBlockItem): NoteBlockLayout {
-    return draftNoteBlockLayouts[noteBlock.note_block_id] ?? {
+  function resolveNoteBlockLayout(noteBlock: NoteBlockItem, layoutKey = noteBlock.note_block_id): NoteBlockLayout {
+    return draftNoteBlockLayouts[layoutKey] ?? {
       x: noteBlock.x,
       y: noteBlock.y,
       width: noteBlock.width,
@@ -126,7 +128,7 @@ export function useNoteBlockInteraction(
           ? buildDraggedNoteBlockLayout(activeInteraction, event)
           : buildResizedNoteBlockLayout(activeInteraction, event);
 
-      updateDraftNoteBlockLayout(activeInteraction.noteBlockId, nextLayout);
+      updateDraftNoteBlockLayout(activeInteraction.layoutKey, nextLayout);
     }
 
     function handlePointerUp(event: PointerEvent) {
@@ -135,7 +137,7 @@ export function useNoteBlockInteraction(
           ? buildDraggedNoteBlockLayout(activeInteraction, event)
           : buildResizedNoteBlockLayout(activeInteraction, event);
 
-      updateDraftNoteBlockLayout(activeInteraction.noteBlockId, finalLayout);
+      updateDraftNoteBlockLayout(activeInteraction.layoutKey, finalLayout);
       void options.saveNoteBlockPosition(
         activeInteraction.documentId,
         activeInteraction.noteBlockId,
@@ -159,6 +161,7 @@ export function useNoteBlockInteraction(
     event: React.PointerEvent<HTMLDivElement>,
     documentId: string,
     noteBlock: NoteBlockItem,
+    layoutKey = noteBlock.note_block_id,
   ) {
     if (event.button !== 0) {
       return;
@@ -168,12 +171,13 @@ export function useNoteBlockInteraction(
     event.stopPropagation();
     setNoteBlockInteraction({
       noteBlockId: noteBlock.note_block_id,
+      layoutKey,
       documentId,
       mode: "drag",
       resizeDirection: null,
       startClientX: event.clientX,
       startClientY: event.clientY,
-      startLayout: resolveNoteBlockLayout(noteBlock),
+      startLayout: resolveNoteBlockLayout(noteBlock, layoutKey),
     });
   }
 
@@ -182,6 +186,7 @@ export function useNoteBlockInteraction(
     documentId: string,
     noteBlock: NoteBlockItem,
     resizeDirection: NoteBlockResizeDirection,
+    layoutKey = noteBlock.note_block_id,
   ) {
     if (event.button !== 0) {
       return;
@@ -191,12 +196,13 @@ export function useNoteBlockInteraction(
     event.stopPropagation();
     setNoteBlockInteraction({
       noteBlockId: noteBlock.note_block_id,
+      layoutKey,
       documentId,
       mode: "resize",
       resizeDirection,
       startClientX: event.clientX,
       startClientY: event.clientY,
-      startLayout: resolveNoteBlockLayout(noteBlock),
+      startLayout: resolveNoteBlockLayout(noteBlock, layoutKey),
     });
   }
 

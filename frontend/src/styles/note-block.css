@@ -5,6 +5,10 @@
   min-height: 80px;
 }
 
+.lecture-note-block--collapsed {
+  min-height: 0;
+}
+
 .lecture-note-block__shell {
   position: relative;
   height: 100%;
@@ -33,6 +37,55 @@
 
 .lecture-note-block__handle span {
   font-weight: 800;
+}
+
+.lecture-note-block__actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.lecture-note-block__actions button,
+.lecture-note-block__collapsed-bar button {
+  min-height: 26px;
+  padding: 3px 8px;
+  border: 1px solid rgb(135 104 20 / 38%);
+  border-radius: 6px;
+  background: rgb(255 255 255 / 72%);
+  color: #3d3210;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.lecture-note-block__actions button:hover,
+.lecture-note-block__collapsed-bar button:hover {
+  background: #ffffff;
+}
+
+.lecture-note-block__collapsed-bar {
+  min-height: 36px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px 6px 10px;
+  border: 1px solid #d3a629;
+  border-radius: 8px;
+  background: rgb(255 244 184 / 96%);
+  box-shadow: 0 10px 22px rgb(72 64 34 / 18%);
+  color: #2f2a18;
+  cursor: move;
+  user-select: none;
+}
+
+.lecture-note-block__collapsed-bar span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .lecture-note-block__content {

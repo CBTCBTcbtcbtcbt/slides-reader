@@ -7,7 +7,9 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import {
+  clearDocumentLectureNotesQueue as clearDocumentLectureNotesQueueRequest,
   deleteDocument as deleteDocumentRequest,
+  generateRemainingLectureNotes as generateRemainingLectureNotesRequest,
   listDocumentPages,
   listDocuments,
   readDocumentStatus,
@@ -15,7 +17,7 @@ import {
   regenerateDocumentLectureNotes as regenerateDocumentLectureNotesRequest,
   regeneratePageLectureNotes as regeneratePageLectureNotesRequest,
   renameDocument,
-  submitPageChat,
+  submitPageChatStream,
   toggleDocumentLectureNotesPaused as toggleDocumentLectureNotesPausedRequest,
   updateNoteBlockPosition,
   uploadDocument,
@@ -27,6 +29,7 @@ import {
   testLlmConfig as testLlmConfigRequest,
 } from "./api/llm";
 import { FilesView } from "./components/FilesView/FilesView";
+import { MarkdownContent } from "./components/MarkdownContent";
 import { NoteBlock } from "./components/NoteBlock/NoteBlock";
 import { PageChatContent, PageChatStatus } from "./components/PageChat/PageChat";
 import { ReaderView } from "./components/ReaderView/ReaderView";
@@ -35,6 +38,7 @@ import { useDocumentPolling } from "./hooks/useDocumentPolling";
 import { useNoteBlockInteraction } from "./hooks/useNoteBlockInteraction";
 import { usePdfSizing } from "./hooks/usePdfSizing";
 import type {
+  ChatMessageItem,
   DocumentItem,
   DocumentStatusResponse,
   LLMConfigResponse,
@@ -47,6 +51,7 @@ import type {
   LLMConfigState,
   LoadedPdfPage,
   NoteBlockLayout,
+  PendingChatAttachment,
   PdfPageNaturalSize,
   ReaderRightSidebar,
   ReaderState,
@@ -62,6 +67,7 @@ const MIN_PDF_PAGE_STAGE_WIDTH = 120;
 const MIN_NOTE_BLOCK_WIDTH = 120;
 const MIN_NOTE_BLOCK_HEIGHT = 80;
 const DOCUMENT_STATUS_POLL_INTERVAL_MS = 2000;
+const PAGE_CHAT_MAX_ATTACHMENTS = 4;
 const FILES_ROUTE = "/";
 const SETTINGS_ROUTE = "/settings";
 const READER_ROUTE_TEMPLATE = "/documents/:documentId/read";
@@ -133,7 +139,8 @@ function App() {
   const [isCourseSummaryPanelOpen, setIsCourseSummaryPanelOpen] = useState(false);
   const [readerRightSidebar, setReaderRightSidebar] = useState<ReaderRightSidebar>("none");
   const [isReaderTopbarCollapsed, setIsReaderTopbarCollapsed] = useState(false);
-  const [isReaderChatCollapsed, setIsReaderChatCollapsed] = useState(false);
+  const [isReaderChatCollapsed, setIsReaderChatCollapsed] = useState(true);
+  const [isReaderNoteBlockCollapsed, setIsReaderNoteBlockCollapsed] = useState(false);
   const [readerState, setReaderState] = useState<ReaderState>("idle");
   const [readerMessage, setReaderMessage] = useState("");
   const [currentPdfPage, setCurrentPdfPage] = useState(1);
@@ -179,7 +186,17 @@ function App() {
   const [pagesByDocument, setPagesByDocument] = useState<Record<string, PageItem[]>>({});
   const [pagesMessageByDocument, setPagesMessageByDocument] = useState<Record<string, string>>({});
   const [pageQuestionInput, setPageQuestionInput] = useState("");
+  const [pendingPageChatAttachments, setPendingPageChatAttachments] = useState<
+    PendingChatAttachment[]
+  >([]);
+  const pendingPageChatAttachmentsRef = useRef<PendingChatAttachment[]>([]);
   const [submittingPageChatId, setSubmittingPageChatId] = useState<string | null>(null);
+  const pageChatAbortControllerRef = useRef<AbortController | null>(null);
+  const pageChatStreamContextRef = useRef<{
+    documentId: string;
+    pageId: string;
+    assistantMessageId: string;
+  } | null>(null);
   const [pageChatMessage, setPageChatMessage] = useState("");
 
   const {
@@ -218,7 +235,6 @@ function App() {
   });
 
   const {
-    setDraftNoteBlockLayouts,
     resolveNoteBlockLayout,
     startNoteBlockDrag,
     startNoteBlockResize,
@@ -342,10 +358,27 @@ function App() {
 
   useEffect(() => {
     // 切换文档或页码后，当前页问答输入框和 PDF 原始尺寸都需要重新计算。
+    stopPageQuestion("已切换页面，已中断上一轮回答。");
     setPageQuestionInput("");
     setPageChatMessage("");
     setPdfPageNaturalSize(null);
+    clearPendingPageChatAttachments();
   }, [activeReaderDocument?.document_id, currentPdfPage]);
+
+  useEffect(() => {
+    // ref 保存最新附件列表，让卸载清理不依赖某一次渲染时的旧状态。
+    pendingPageChatAttachmentsRef.current = pendingPageChatAttachments;
+  }, [pendingPageChatAttachments]);
+
+  useEffect(() => {
+    // 组件卸载时释放所有 object URL，避免浏览器一直占用本地图片预览内存。
+    return () => {
+      pageChatAbortControllerRef.current?.abort();
+      pendingPageChatAttachmentsRef.current.forEach((attachment) => {
+        URL.revokeObjectURL(attachment.previewUrl);
+      });
+    };
+  }, []);
 
   useEffect(() => {
     // 页码输入框进入编辑状态后自动聚焦，并选中旧页码方便直接覆盖。
@@ -624,9 +657,11 @@ function App() {
 
     setActiveReaderDocument(document);
     setIsCourseSummaryPanelOpen(false);
-    setReaderRightSidebar("none");
+    // 默认把本页讲稿放在右侧栏，并折叠底部会话，优先留出 PDF 阅读空间。
+    setReaderRightSidebar("note");
     setIsReaderTopbarCollapsed(false);
-    setIsReaderChatCollapsed(false);
+    setIsReaderChatCollapsed(true);
+    setIsReaderNoteBlockCollapsed(false);
     setCurrentPdfPage(nextPageNumber);
     setPdfPageInputValue(String(nextPageNumber));
     setIsEditingPdfPage(false);
@@ -644,7 +679,8 @@ function App() {
     setIsCourseSummaryPanelOpen(false);
     setReaderRightSidebar("none");
     setIsReaderTopbarCollapsed(false);
-    setIsReaderChatCollapsed(false);
+    setIsReaderChatCollapsed(true);
+    setIsReaderNoteBlockCollapsed(false);
     setCurrentPdfPage(1);
     setPdfPageInputValue("1");
     setIsEditingPdfPage(false);
@@ -685,6 +721,7 @@ function App() {
   }
 
   function toggleCourseSummarySidebar() {
+    setIsReaderChatCollapsed(true);
     setReaderRightSidebar((currentSidebar) => {
       const nextSidebar: ReaderRightSidebar = currentSidebar === "summary" ? "none" : "summary";
       setIsCourseSummaryPanelOpen(nextSidebar === "summary");
@@ -695,12 +732,38 @@ function App() {
   function openChatSidebar() {
     setReaderRightSidebar("chat");
     setIsCourseSummaryPanelOpen(false);
-    setIsReaderChatCollapsed(false);
+    setIsReaderChatCollapsed(true);
+  }
+
+  function toggleNoteSidebar() {
+    setIsReaderChatCollapsed(true);
+    setReaderRightSidebar((currentSidebar) => (currentSidebar === "note" ? "none" : "note"));
+    setIsCourseSummaryPanelOpen(false);
   }
 
   function closeRightSidebar() {
+    if (readerRightSidebar === "chat") {
+      setIsReaderChatCollapsed(true);
+    }
+
     setReaderRightSidebar("none");
     setIsCourseSummaryPanelOpen(false);
+  }
+
+  function openCurrentNoteBlockInSidebar(noteBlockId: string) {
+    // 移入右栏只依赖 readerRightSidebar 临时折叠，不写入手动折叠状态。
+    void noteBlockId;
+    setReaderRightSidebar("note");
+    setIsCourseSummaryPanelOpen(false);
+    setIsReaderChatCollapsed(true);
+  }
+
+  function expandCurrentNoteBlock(noteBlockId: string) {
+    void noteBlockId;
+    setIsReaderNoteBlockCollapsed(false);
+    if (readerRightSidebar === "note") {
+      setReaderRightSidebar("none");
+    }
   }
 
   function turnPdfPage(step: -1 | 1) {
@@ -965,6 +1028,116 @@ function App() {
     }
   }
 
+  function clearPendingPageChatAttachments() {
+    // 待发送图片的预览 URL 是浏览器临时资源，清空状态前必须主动释放。
+    setPendingPageChatAttachments((currentAttachments) => {
+      currentAttachments.forEach((attachment) => {
+        URL.revokeObjectURL(attachment.previewUrl);
+      });
+      return [];
+    });
+  }
+
+  function addPendingPageChatAttachments(files: File[]) {
+    // PageChat 组件已经做了图片类型过滤；这里主要负责数量限制和预览 URL 创建。
+    if (files.length === 0) {
+      return;
+    }
+
+    setPendingPageChatAttachments((currentAttachments) => {
+      const availableSlots = PAGE_CHAT_MAX_ATTACHMENTS - currentAttachments.length;
+      if (availableSlots <= 0) {
+        setPageChatMessage(`每次最多只能上传 ${PAGE_CHAT_MAX_ATTACHMENTS} 张图片。`);
+        return currentAttachments;
+      }
+
+      const acceptedFiles = files.slice(0, availableSlots);
+      const nextAttachments = acceptedFiles.map((file) => ({
+        id: `${crypto.randomUUID()}-${file.name}`,
+        file,
+        previewUrl: URL.createObjectURL(file),
+      }));
+
+      if (files.length > acceptedFiles.length) {
+        setPageChatMessage(
+          `每次最多只能上传 ${PAGE_CHAT_MAX_ATTACHMENTS} 张图片，已只保留前 ${availableSlots} 张。`,
+        );
+      } else {
+        setPageChatMessage("");
+      }
+
+      return [...currentAttachments, ...nextAttachments];
+    });
+  }
+
+  function removePendingPageChatAttachment(attachmentId: string) {
+    setPendingPageChatAttachments((currentAttachments) => {
+      const removedAttachment = currentAttachments.find((attachment) => attachment.id === attachmentId);
+      if (removedAttachment) {
+        URL.revokeObjectURL(removedAttachment.previewUrl);
+      }
+
+      return currentAttachments.filter((attachment) => attachment.id !== attachmentId);
+    });
+  }
+
+  function updatePageChatMessages(
+    documentId: string,
+    pageId: string,
+    resolveMessages: (messages: ChatMessageItem[]) => ChatMessageItem[],
+  ) {
+    // 所有聊天历史更新都集中到这里，避免流式增量更新时重复编写页面查找逻辑。
+    setPagesByDocument((currentPages) => ({
+      ...currentPages,
+      [documentId]: (currentPages[documentId] ?? []).map((currentPage) =>
+        currentPage.page_id === pageId
+          ? { ...currentPage, chat_messages: resolveMessages(currentPage.chat_messages) }
+          : currentPage,
+      ),
+    }));
+  }
+
+  function replacePageChatMessages(
+    documentId: string,
+    pageId: string,
+    messages: ChatMessageItem[],
+  ) {
+    // done 事件返回的是后端完整历史，直接覆盖可以消除乐观更新产生的临时消息。
+    updatePageChatMessages(documentId, pageId, () => messages);
+  }
+
+  function removeStreamingAssistantMessage(
+    documentId: string,
+    pageId: string,
+    assistantMessageId: string,
+  ) {
+    // 用户中断或模型报错时，前端临时 assistant 消息不能继续留在历史列表中。
+    updatePageChatMessages(documentId, pageId, (messages) =>
+      messages.filter((message) => message.chat_message_id !== assistantMessageId),
+    );
+  }
+
+  function stopPageQuestion(message = "回答已中断。") {
+    const abortController = pageChatAbortControllerRef.current;
+    const streamContext = pageChatStreamContextRef.current;
+
+    // 没有正在进行的流式请求时不做任何状态变更，避免切页时误报中断。
+    if (!abortController || !streamContext) {
+      return;
+    }
+
+    abortController.abort();
+    pageChatAbortControllerRef.current = null;
+    pageChatStreamContextRef.current = null;
+    setSubmittingPageChatId(null);
+    removeStreamingAssistantMessage(
+      streamContext.documentId,
+      streamContext.pageId,
+      streamContext.assistantMessageId,
+    );
+    setPageChatMessage(message);
+  }
+
   async function submitPageQuestion(page: PageItem) {
     const question = pageQuestionInput.trim();
 
@@ -973,34 +1146,118 @@ function App() {
       return;
     }
 
+    if (submittingPageChatId === page.page_id) {
+      stopPageQuestion();
+      return;
+    }
+
     if (!question) {
       setPageChatMessage("问题不能为空。");
       return;
     }
 
+    const documentId = activeReaderDocument.document_id;
+    const attachments = pendingPageChatAttachments.map((attachment) => attachment.file);
+    const abortController = new AbortController();
+    const assistantMessageId = `streaming-${crypto.randomUUID()}`;
+    const now = new Date().toISOString();
+    let hasCompletedStream = false;
+    let streamErrorMessage = "";
+
     setSubmittingPageChatId(page.page_id);
-    setPageChatMessage("正在等待 AI 老师回答...");
+    setPageChatMessage("正在连接 AI 老师...");
+    pageChatAbortControllerRef.current = abortController;
+    pageChatStreamContextRef.current = {
+      documentId,
+      pageId: page.page_id,
+      assistantMessageId,
+    };
 
     try {
-      const data = await submitPageChat(page.page_id, question);
+      await submitPageChatStream(page.page_id, question, attachments, {
+        signal: abortController.signal,
+        onEvent(event) {
+          if (event.type === "user_message") {
+            // 后端发出 user_message 表示用户消息和附件已经持久化，可以清空输入区。
+            const streamingAssistantMessage: ChatMessageItem = {
+              chat_message_id: assistantMessageId,
+              page_id: page.page_id,
+              role: "assistant",
+              content: "",
+              attachments: [],
+              created_at: now,
+            };
+            updatePageChatMessages(documentId, page.page_id, (messages) => [
+              ...messages,
+              event.message,
+              streamingAssistantMessage,
+            ]);
+            setPageQuestionInput("");
+            clearPendingPageChatAttachments();
+            setPageChatMessage("AI 老师正在回答...");
+            return;
+          }
 
-      setPagesByDocument((currentPages) => ({
-        ...currentPages,
-        [activeReaderDocument.document_id]: (
-          currentPages[activeReaderDocument.document_id] ?? []
-        ).map((currentPage) =>
-          currentPage.page_id === data.page_id
-            ? { ...currentPage, chat_messages: data.messages }
-            : currentPage,
-        ),
-      }));
-      setPageQuestionInput("");
-      setPageChatMessage("AI 老师已回答。");
+          if (event.type === "delta") {
+            // 每个 delta 都是模型新生成的一段文本，追加到临时 assistant 消息中。
+            updatePageChatMessages(documentId, page.page_id, (messages) =>
+              messages.map((message) =>
+                message.chat_message_id === assistantMessageId
+                  ? { ...message, content: `${message.content}${event.content}` }
+                  : message,
+              ),
+            );
+            return;
+          }
+
+          if (event.type === "done") {
+            // done 事件说明模型正常结束，后端已经保存 assistant 消息。
+            hasCompletedStream = true;
+            replacePageChatMessages(documentId, page.page_id, event.messages);
+            setPageChatMessage("AI 老师已回答。");
+            return;
+          }
+
+          if (event.type === "error") {
+            // error 事件表示后端保留了用户消息，但没有保存 assistant 回答。
+            streamErrorMessage = event.message;
+            removeStreamingAssistantMessage(documentId, page.page_id, assistantMessageId);
+            setPageChatMessage(event.message);
+          }
+        },
+      });
+
+      if (streamErrorMessage) {
+        await loadDocumentPages(documentId);
+        return;
+      }
+
+      if (!hasCompletedStream) {
+        removeStreamingAssistantMessage(documentId, page.page_id, assistantMessageId);
+        setPageChatMessage("流式回答提前结束，已刷新当前页问答历史。");
+        await loadDocumentPages(documentId);
+      }
     } catch (error) {
-      setPageChatMessage(error instanceof Error ? error.message : "当前页问答失败，请稍后重试。");
-      await loadDocumentPages(activeReaderDocument.document_id);
+      if (error instanceof DOMException && error.name === "AbortError") {
+        // AbortError 是用户主动中断或切页造成的正常结果，刷新历史以对齐后端已保存的 user 消息。
+        const activeStreamContext = pageChatStreamContextRef.current;
+        if (
+          !activeStreamContext ||
+          activeStreamContext.assistantMessageId === assistantMessageId
+        ) {
+          await loadDocumentPages(documentId);
+        }
+      } else {
+        removeStreamingAssistantMessage(documentId, page.page_id, assistantMessageId);
+        setPageChatMessage(error instanceof Error ? error.message : "当前页问答失败，请稍后重试。");
+        await loadDocumentPages(documentId);
+      }
     } finally {
-      setSubmittingPageChatId(null);
+      if (pageChatAbortControllerRef.current === abortController) {
+        pageChatAbortControllerRef.current = null;
+        pageChatStreamContextRef.current = null;
+        setSubmittingPageChatId(null);
+      }
     }
   }
 
@@ -1031,11 +1288,6 @@ function App() {
         ),
       }));
       setReaderMessage("");
-      setDraftNoteBlockLayouts((currentLayouts) => {
-        const nextLayouts = { ...currentLayouts };
-        delete nextLayouts[noteBlockId];
-        return nextLayouts;
-      });
     } catch (error) {
       setReaderMessage(error instanceof Error ? error.message : "讲稿文字块位置保存失败，请稍后重试。");
     }
@@ -1061,12 +1313,56 @@ function App() {
     try {
       await regenerateDocumentLectureNotesRequest(document.document_id);
 
-      setDocumentActionMessage("逐页讲稿已开始重新生成。");
+      setDocumentActionMessage("所有页面已加入逐页讲稿待生成队列。");
       await loadDocumentStatus(document.document_id);
       await loadDocumentPages(document.document_id);
     } catch (error) {
       setDocumentActionMessage(
         error instanceof Error ? error.message : "重新生成逐页讲稿失败，请稍后重试。",
+      );
+    } finally {
+      setDocumentActionState(null);
+    }
+  }
+
+  async function generateRemainingLectureNotes(document: DocumentItem) {
+    setDocumentActionState({
+      documentId: document.document_id,
+      action: "generatingRemainingLectureNotes",
+    });
+    setDocumentActionMessage("");
+
+    try {
+      const result = await generateRemainingLectureNotesRequest(document.document_id);
+
+      setDocumentActionMessage(`已将 ${result.queued_count} 个缺少讲稿的页面加入待生成队列。`);
+      await loadDocumentStatus(document.document_id);
+      await loadDocumentPages(document.document_id, false);
+    } catch (error) {
+      setDocumentActionMessage(
+        error instanceof Error ? error.message : "生成剩余讲稿失败，请稍后重试。",
+      );
+    } finally {
+      setDocumentActionState(null);
+    }
+  }
+
+  async function clearDocumentLectureNotesQueue(document: DocumentItem) {
+    setDocumentActionState({
+      documentId: document.document_id,
+      action: "clearingLectureNotesQueue",
+    });
+    setDocumentActionMessage("");
+
+    try {
+      const result = await clearDocumentLectureNotesQueueRequest(document.document_id);
+
+      setDocumentActionMessage(`已清空 ${result.cleared_count} 个待生成讲稿任务。`);
+      await loadDocumentStatus(document.document_id);
+      await loadDocumentPages(document.document_id, false);
+    } catch (error) {
+      setDocumentActionMessage(
+        error instanceof Error ? error.message : "清空待生成队列失败，请稍后重试。",
       );
     } finally {
       setDocumentActionState(null);
@@ -1086,7 +1382,7 @@ function App() {
       await toggleDocumentLectureNotesPausedRequest(document.document_id, isPaused);
 
       setDocumentActionMessage(
-        isPaused ? "逐页讲稿已继续生成。" : "逐页讲稿已暂停后续页面生成。",
+        isPaused ? "逐页讲稿已继续生成，后台会消费已有待生成队列。" : "逐页讲稿已暂停，待生成队列会保留。",
       );
       await loadDocumentStatus(document.document_id);
       await loadDocumentPages(document.document_id, false);
@@ -1112,7 +1408,7 @@ function App() {
     try {
       await regeneratePageLectureNotesRequest(page.page_id);
 
-      setDocumentActionMessage(`第 ${page.page_number} 页讲稿已开始重新生成。`);
+      setDocumentActionMessage(`第 ${page.page_number} 页讲稿已加入待生成队列。`);
       await loadDocumentStatus(document.document_id);
       await loadDocumentPages(document.document_id);
     } catch (error) {
@@ -1177,7 +1473,7 @@ function App() {
     }
 
     const pausedText = statusData.lecture_notes_paused ? "，已暂停" : "";
-    return `讲稿进度：${statusData.lecture_notes_ready_count}/${statusData.total_pages} 页已生成，${statusData.lecture_notes_processing_count} 页生成中，${statusData.lecture_notes_pending_count} 页等待，${statusData.lecture_notes_failed_count} 页失败${pausedText}。`;
+    return `讲稿进度：${statusData.lecture_notes_ready_count}/${statusData.total_pages} 页已有讲稿，${statusData.lecture_notes_processing_count} 页生成中，${statusData.lecture_notes_pending_count} 页在待生成队列，${statusData.lecture_notes_failed_count} 页失败${pausedText}。`;
   }
 
   function isDocumentBusy(documentId: string) {
@@ -1231,11 +1527,14 @@ function App() {
     const readerPages = pagesByDocument[readerDocument.document_id] ?? [];
     const currentReaderPage = readerPages.find((page) => page.page_number === currentPdfPage);
     const activeDocumentStatus = documentStatusById[readerDocument.document_id];
-    const currentNoteBlock =
-      currentReaderPage?.lecture_notes_status === "ready" ? currentReaderPage.note_block : null;
+    const currentNoteBlock = currentReaderPage?.note_block ?? null;
+    const readerNoteBlockLayoutKey = `reader-note-block:${readerDocument.document_id}`;
     const currentNoteBlockLayout = currentNoteBlock
-      ? resolveNoteBlockLayout(currentNoteBlock)
+      ? resolveNoteBlockLayout(currentNoteBlock, readerNoteBlockLayoutKey)
       : null;
+    const isCurrentNoteBlockCollapsed =
+      currentNoteBlock !== null &&
+      (readerRightSidebar === "note" || isReaderNoteBlockCollapsed);
     const isSubmittingCurrentPageChat =
       currentReaderPage !== undefined && submittingPageChatId === currentReaderPage.page_id;
     const currentPageChatCount = currentReaderPage?.chat_messages.length ?? 0;
@@ -1245,14 +1544,36 @@ function App() {
         currentPdfPage={currentPdfPage}
         pageQuestionInput={pageQuestionInput}
         isSubmittingCurrentPageChat={isSubmittingCurrentPageChat}
+        pendingAttachments={pendingPageChatAttachments}
         formatCreatedAt={formatCreatedAt}
         onQuestionInputChange={setPageQuestionInput}
+        onAddPendingAttachments={addPendingPageChatAttachments}
+        onRemovePendingAttachment={removePendingPageChatAttachment}
         onSubmitPageQuestion={(page) => {
           void submitPageQuestion(page);
         }}
       />
     );
     const pageChatStatus = <PageChatStatus pageChatMessage={pageChatMessage} />;
+    const noteSidebarContent = (
+      <div className="reader-note-sidebar-content">
+        {currentReaderPage?.lecture_notes ? (
+          <MarkdownContent content={currentReaderPage.lecture_notes} />
+        ) : currentReaderPage?.lecture_notes_status === "processing" ? (
+          <p>本页讲稿正在生成，完成后会自动更新。</p>
+        ) : currentReaderPage?.lecture_notes_status === "pending" ? (
+          <p>本页讲稿还没有开始生成。</p>
+        ) : currentReaderPage?.lecture_notes_status === "failed" ? (
+          <p className="document-error">
+            {currentReaderPage.lecture_notes_error ?? "本页讲稿生成失败。"}
+          </p>
+        ) : currentReaderPage ? (
+          <p>本页暂时没有讲稿内容。</p>
+        ) : (
+          <p>正在加载当前页讲稿。</p>
+        )}
+      </div>
+    );
     const pageTurnControls = (
       <div className="pdf-reader-toolbar">
         <button
@@ -1311,8 +1632,22 @@ function App() {
             height: currentNoteBlock.height,
           }
         }
-        onStartDrag={startNoteBlockDrag}
-        onStartResize={startNoteBlockResize}
+        isCollapsed={isCurrentNoteBlockCollapsed}
+        onStartDrag={(event, documentId, noteBlock) =>
+          startNoteBlockDrag(event, documentId, noteBlock, readerNoteBlockLayoutKey)
+        }
+        onStartResize={(event, documentId, noteBlock, resizeDirection) =>
+          startNoteBlockResize(
+            event,
+            documentId,
+            noteBlock,
+            resizeDirection,
+            readerNoteBlockLayoutKey,
+          )
+        }
+        onCollapse={() => setIsReaderNoteBlockCollapsed(true)}
+        onExpand={expandCurrentNoteBlock}
+        onOpenInSidebar={openCurrentNoteBlockInSidebar}
       />
     ) : null;
 
@@ -1332,6 +1667,7 @@ function App() {
         pageTurnControls={pageTurnControls}
         pageChatContent={pageChatContent}
         pageChatStatus={pageChatStatus}
+        noteSidebarContent={noteSidebarContent}
         noteBlockElement={noteBlockElement}
         pdfPageWidth={pdfPageWidth}
         thumbnailRenderWidth={thumbnailRenderWidth}
@@ -1353,6 +1689,7 @@ function App() {
         onClearActiveDocument={clearActiveDocument}
         onCollapseTopbar={() => {
           setIsCourseSummaryPanelOpen(false);
+          setIsReaderChatCollapsed(true);
           setReaderRightSidebar((currentSidebar) =>
             currentSidebar === "summary" ? "none" : currentSidebar,
           );
@@ -1360,6 +1697,7 @@ function App() {
         }}
         onExpandTopbar={() => setIsReaderTopbarCollapsed(false)}
         onCloseRightSidebar={closeRightSidebar}
+        onToggleNoteSidebar={toggleNoteSidebar}
         onOpenChatSidebar={openChatSidebar}
         onSetReaderChatCollapsed={setIsReaderChatCollapsed}
         onGoToPdfPage={goToPdfPage}
@@ -1483,6 +1821,12 @@ function App() {
             }}
             onRegenerateDocumentLectureNotes={(document) => {
               void regenerateDocumentLectureNotes(document);
+            }}
+            onGenerateRemainingLectureNotes={(document) => {
+              void generateRemainingLectureNotes(document);
+            }}
+            onClearLectureNotesQueue={(document) => {
+              void clearDocumentLectureNotesQueue(document);
             }}
             onRegeneratePageLectureNotes={(document, page) => {
               void regeneratePageLectureNotes(document, page);

@@ -102,6 +102,7 @@ http://127.0.0.1:8000
   "page_id": "string",
   "role": "user",
   "content": "问题或回答正文",
+  "attachments": [],
   "created_at": "2026-06-15T12:00:00+00:00"
 }
 ```
@@ -110,6 +111,31 @@ http://127.0.0.1:8000
 
 - `user`：学生问题。
 - `assistant`：AI 老师回答。
+
+### ChatAttachmentItem
+
+`ChatAttachmentItem` 表示当前页问答消息中保存的图片附件。
+
+```json
+{
+  "attachment_id": "string",
+  "chat_message_id": "string",
+  "page_id": "string",
+  "kind": "image",
+  "filename": "example.png",
+  "mime_type": "image/png",
+  "file_size": 12345,
+  "file_url": "/api/chat-attachments/{attachment_id}/file",
+  "created_at": "2026-06-15T12:00:00+00:00"
+}
+```
+
+字段说明：
+
+- `kind`：第一版固定为 `image`。
+- `filename`：用户上传或粘贴图片时的原始文件名。
+- `mime_type`：后端根据文件头识别出的真实图片类型。
+- `file_url`：前端展示历史图片缩略图时使用。
 
 ## 健康检查
 
@@ -673,13 +699,28 @@ PATCH /api/note-blocks/{note_block_id}
 POST /api/pages/{page_id}/chat
 ```
 
-请求体：
+非流式接口会等待 LLM 完整回答后返回 JSON。前端当前主要使用下面的流式接口，旧接口保留用于兼容和测试。
+
+纯文本请求体：
 
 ```json
 {
   "question": "请解释当前页这个公式的含义。"
 }
 ```
+
+带图片附件时也使用同一路径，但请求格式改为 `multipart/form-data`：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `question` | text | 用户问题。 |
+| `attachments` | file | 可重复出现，第一版只支持 PNG、JPEG、WebP 图片。 |
+
+限制：
+
+- 单轮最多 4 张图片。
+- 单张图片最大 10MB。
+- 后端会根据文件头识别图片类型，不只依赖浏览器传入的 MIME。
 
 成功响应：
 
@@ -692,6 +733,7 @@ POST /api/pages/{page_id}/chat
     "page_id": "string",
     "role": "user",
     "content": "请解释当前页这个公式的含义。",
+    "attachments": [],
     "created_at": "string"
   },
   "assistant_message": {
@@ -699,6 +741,7 @@ POST /api/pages/{page_id}/chat
     "page_id": "string",
     "role": "assistant",
     "content": "AI 老师回答",
+    "attachments": [],
     "created_at": "string"
   },
   "messages": []
@@ -708,16 +751,77 @@ POST /api/pages/{page_id}/chat
 重要行为：
 
 - 后端会先保存用户问题。
-- 如果后续 LLM 调用失败，用户问题仍然保留在 `chat_messages` 表。
+- 如果后续 LLM 调用失败，用户问题和本轮图片附件仍然保留。
 - 构造 prompt 时会带上课程简介、当前页文字、当前页讲稿、最近问答历史和最新问题。
 - 最近问答历史最多取 `PAGE_CHAT_HISTORY_LIMIT = 20` 条。
+- 如果本轮上传图片，或同一页存在最近历史图片，会使用图文请求。
+- 后续追问会自动带入同一页最近 3 张历史图片，不跨页、不跨文档。
 
 常见错误：
 
 - `400`：问题为空。
+- `400`：附件不是 PNG、JPEG 或 WebP。
+- `400`：附件超过 10MB，或单轮超过 4 张。
 - `404`：页面不存在。
 - `502`：LLM 调用失败。
 - `504`：LLM 请求超时。
+
+### 当前页问答流式接口
+
+```text
+POST /api/pages/{page_id}/chat/stream
+```
+
+请求格式和 `POST /api/pages/{page_id}/chat` 相同：
+
+- 没有附件时发送 JSON：`{ "question": "..." }`。
+- 有图片附件时发送 `multipart/form-data`，字段仍为 `question` 和重复的 `attachments`。
+
+成功响应不是普通 JSON，而是 `application/x-ndjson`。`NDJSON` 是“每一行都是一个 JSON 对象”的流式文本格式，前端可以一边读取一边更新界面。
+
+事件类型：
+
+```json
+{"type":"user_message","message":{}}
+{"type":"delta","content":"模型新生成的一小段文本"}
+{"type":"done","assistant_message":{},"messages":[]}
+{"type":"error","message":"错误原因"}
+```
+
+事件含义：
+
+- `user_message`：后端已经保存用户消息和本轮图片附件，前端可以清空输入框和待发送图片。
+- `delta`：LLM 新生成的一段文本，前端追加到临时 assistant 消息中。
+- `done`：LLM 正常结束，后端已经保存完整 assistant 消息，并返回当前页完整问答历史。
+- `error`：LLM 调用失败或返回空回答。用户消息和附件已经保留，但不会保存 assistant 消息。
+
+中断行为：
+
+- 前端通过 `AbortController` 中断正在读取的流式请求。
+- 中断后前端会移除临时 assistant 消息，并重新加载当前页历史。
+- 后端只在正常生成完整回答后保存 assistant 消息，因此中断不会把半截回答保存为历史记录。
+
+## 读取聊天图片附件
+
+```text
+GET /api/chat-attachments/{attachment_id}/file
+```
+
+用途：
+
+- 当前页问答历史中展示已发送图片缩略图。
+- 点击缩略图打开原图。
+
+成功响应：
+
+- 文件响应。
+- `media_type` 为后端识别出的图片 MIME。
+
+常见错误：
+
+- `404`：附件不存在。
+- `404`：附件文件被手动删除。
+- `500`：附件路径越过允许目录。
 
 ## 重命名文档
 
@@ -763,11 +867,13 @@ DELETE /api/documents/{document_id}
 删除内容：
 
 - `chat_messages` 中该文档所有页面的问答。
+- `chat_attachments` 中该文档所有页面的问答图片附件。
 - `note_blocks` 中该文档所有页面的文字块。
 - `pages` 中该文档所有页面。
 - `documents` 中该文档。
 - `storage/documents/` 中对应 PDF。
 - `storage/pages/` 中对应页面截图。
+- `storage/chat-attachments/` 中对应聊天图片附件。
 
 删除顺序：
 

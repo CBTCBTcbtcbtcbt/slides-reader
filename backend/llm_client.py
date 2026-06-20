@@ -6,7 +6,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from fastapi import HTTPException, status
 
@@ -179,19 +179,20 @@ def build_chat_completions_url(base_url: str) -> str:
     return f"{base_url}/chat/completions"
 
 
-def encode_image_as_data_url(image_path: Path) -> str:
-    """把本地 PNG 图片转换成 data URL。
+def encode_image_as_data_url(image_path: Path, mime_type: str = "image/png") -> str:
+    """把本地图片转换成 data URL。
 
     参数：
         image_path：本地图片路径。
+        mime_type：图片 MIME 类型，例如 image/png、image/jpeg 或 image/webp。
 
     返回值：
         str：形如 data:image/png;base64,... 的图片文本。
     """
 
-    # 当前页面截图固定保存为 PNG，所以 MIME 类型固定为 image/png。
+    # base64 是 OpenAI-compatible 图文输入常用的内联图片表达方式。
     encoded_image = base64.b64encode(image_path.read_bytes()).decode("ascii")
-    return f"data:image/png;base64,{encoded_image}"
+    return f"data:{mime_type};base64,{encoded_image}"
 
 
 class LLMClient:
@@ -213,23 +214,77 @@ class LLMClient:
         messages = [{"role": "user", "content": prompt}]
         return self._send_chat_completion(messages)
 
+    def stream_text(self, prompt: str) -> Iterator[str]:
+        """发送纯文本提示词，并逐段产出模型回答增量。
+
+        参数：
+            prompt：发给模型的完整文本提示词。
+
+        返回值：
+            Iterator[str]：每次迭代返回模型新生成的一小段文本。
+        """
+
+        # 流式接口和非流式接口使用同一套 messages 结构，只是在 payload 中增加 stream。
+        messages = [{"role": "user", "content": prompt}]
+        yield from self._send_chat_completion_stream(messages)
+
     def complete_with_image(self, prompt: str, image_path: Path) -> str:
         """发送文本加页面截图，并返回模型文本回答。"""
 
+        # 页面截图固定是 PNG，复用多图方法可以保证图文请求格式只有一处实现。
+        return self.complete_with_images(prompt=prompt, images=[(image_path, "image/png")])
+
+    def complete_with_images(self, prompt: str, images: list[tuple[Path, str]]) -> str:
+        """发送文本加多张图片，并返回模型文本回答。
+
+        参数：
+            prompt：文本提示词。
+            images：图片路径和 MIME 类型列表。
+
+        返回值：
+            str：模型返回的文本回答。
+        """
+
+        messages = self._build_image_messages(prompt=prompt, images=images)
+        return self._send_chat_completion(messages)
+
+    def stream_with_images(self, prompt: str, images: list[tuple[Path, str]]) -> Iterator[str]:
+        """发送文本加多张图片，并逐段产出模型回答增量。
+
+        参数：
+            prompt：文本提示词。
+            images：图片路径和 MIME 类型列表。
+
+        返回值：
+            Iterator[str]：每次迭代返回模型新生成的一小段文本。
+        """
+
+        # 图文流式请求的 content 结构与非流式请求完全一致。
+        messages = self._build_image_messages(prompt=prompt, images=images)
+        yield from self._send_chat_completion_stream(messages)
+
+    def _build_image_messages(self, prompt: str, images: list[tuple[Path, str]]) -> list[dict[str, Any]]:
+        """构造 OpenAI-compatible 图文 chat messages。"""
+
         # 视觉请求把 content 写成文本片段和图片片段的数组。
+        content_parts: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+        for image_path, mime_type in images:
+            content_parts.append(
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": encode_image_as_data_url(image_path=image_path, mime_type=mime_type),
+                    },
+                }
+            )
+
         messages = [
             {
                 "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": encode_image_as_data_url(image_path)},
-                    },
-                ],
+                "content": content_parts,
             }
         ]
-        return self._send_chat_completion(messages)
+        return messages
 
     def _send_chat_completion(self, messages: list[dict[str, Any]]) -> str:
         """向 OpenAI-compatible chat completions 接口发送请求。"""
@@ -293,3 +348,94 @@ class LLMClient:
             )
 
         return content
+
+    def _send_chat_completion_stream(self, messages: list[dict[str, Any]]) -> Iterator[str]:
+        """向 OpenAI-compatible chat completions 接口发送流式请求。"""
+
+        # 发请求前统一检查配置，错误会被上层流式包装转换成 error 事件。
+        validate_llm_config(self.config)
+
+        # stream=True 要求模型服务按 Server-Sent Events 风格持续返回 data 行。
+        payload = {"model": self.config.model, "messages": messages, "stream": True}
+        request_body = json.dumps(payload).encode("utf-8")
+
+        request = urllib.request.Request(
+            url=build_chat_completions_url(self.config.base_url),
+            data=request_body,
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {self.config.api_key}",
+                "Accept": "text/event-stream",
+                "Content-Type": "application/json",
+                "User-Agent": "SlidesReader/0.1 (+OpenAI-compatible client)",
+            },
+        )
+
+        try:
+            with urllib.request.urlopen(
+                request,
+                timeout=self.config.timeout_seconds,
+            ) as response:
+                # OpenAI-compatible 流式响应通常是一行一个 data: JSON，最后用 data: [DONE] 结束。
+                for raw_line in response:
+                    line = raw_line.decode("utf-8", errors="replace").strip()
+                    if not line or not line.startswith("data:"):
+                        continue
+
+                    data_text = line.removeprefix("data:").strip()
+                    if data_text == "[DONE]":
+                        break
+
+                    try:
+                        data = json.loads(data_text)
+                    except json.JSONDecodeError as error:
+                        raise HTTPException(
+                            status_code=status.HTTP_502_BAD_GATEWAY,
+                            detail=f"LLM 流式返回格式不符合 OpenAI-compatible chat completions：{data_text}",
+                        ) from error
+
+                    choices = data.get("choices")
+                    if choices == []:
+                        # 部分 OpenAI-compatible 服务会在流末尾返回只包含 usage 的统计 chunk。
+                        # 这类 chunk 没有文本增量，应该忽略，而不是当成格式错误。
+                        continue
+
+                    if not isinstance(choices, list) or not choices:
+                        raise HTTPException(
+                            status_code=status.HTTP_502_BAD_GATEWAY,
+                            detail=f"LLM 流式返回格式不符合 OpenAI-compatible chat completions：{data_text}",
+                        )
+
+                    first_choice = choices[0]
+                    if not isinstance(first_choice, dict):
+                        raise HTTPException(
+                            status_code=status.HTTP_502_BAD_GATEWAY,
+                            detail=f"LLM 流式返回格式不符合 OpenAI-compatible chat completions：{data_text}",
+                        )
+
+                    delta = first_choice.get("delta") or {}
+                    if not isinstance(delta, dict):
+                        raise HTTPException(
+                            status_code=status.HTTP_502_BAD_GATEWAY,
+                            detail=f"LLM 流式返回格式不符合 OpenAI-compatible chat completions：{data_text}",
+                        )
+
+                    content = delta.get("content")
+                    if isinstance(content, str) and content:
+                        yield content
+        except urllib.error.HTTPError as error:
+            error_body = error.read().decode("utf-8", errors="replace")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"LLM 服务返回错误：HTTP {error.code}，{error_body}",
+            ) from error
+        except urllib.error.URLError as error:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"无法连接 LLM 服务：{error.reason}",
+            ) from error
+        except TimeoutError as error:
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="LLM 请求超时，请检查服务地址或调大超时时间。",
+            ) from error

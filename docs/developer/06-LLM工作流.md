@@ -77,6 +77,18 @@
 }
 ```
 
+图文请求可以携带多张图片。逐页讲稿目前只传当前页截图；当前页问答会在用户上传或粘贴图片、或者同一页存在最近历史图片时使用多图请求。
+
+流式请求会在同一个 payload 中增加：
+
+```json
+{
+  "stream": true
+}
+```
+
+模型服务会按 `data: ...` 行返回增量内容。后端从 `choices[0].delta.content` 中读取文本片段，再转换成当前项目自己的 `NDJSON` 事件流返回给前端。
+
 请求头：
 
 - `Authorization: Bearer {api_key}`
@@ -228,20 +240,23 @@ chat_with_page(page_id, request)
 
 ```text
 POST /api/pages/{page_id}/chat
+POST /api/pages/{page_id}/chat/stream
 ```
 
 流程：
 
 1. 去掉问题首尾空白。
 2. 问题为空时返回 `400`。
-3. 查询页面上下文。
-4. 先保存用户问题到 `chat_messages`。
-5. 读取最近问答历史，最多 `PAGE_CHAT_HISTORY_LIMIT = 20` 条。
-6. 排除刚保存的最新问题，避免重复出现在历史和当前问题中。
-7. 构造问答 prompt。
-8. 使用 `complete_text` 调用 LLM。
-9. 成功后保存 `assistant` 消息。
-10. 返回当前页完整问答历史。
+3. 如果请求是 `multipart/form-data`，读取并校验图片附件。
+4. 查询页面上下文。
+5. 先保存用户问题到 `chat_messages`。
+6. 保存本轮图片附件到 `chat_attachments` 和 `storage/chat-attachments/`。
+7. 读取最近问答历史，最多 `PAGE_CHAT_HISTORY_LIMIT = 20` 条。
+8. 构造问答 prompt。
+9. 非流式接口：如果本轮有图片或同一页有最近历史图片，使用 `complete_with_images` 调用 LLM；否则使用 `complete_text`。
+10. 流式接口：如果本轮有图片或同一页有最近历史图片，使用 `stream_with_images` 调用 LLM；否则使用 `stream_text`。
+11. 非流式接口成功后保存 `assistant` 消息，并返回当前页完整问答历史。
+12. 流式接口会先返回 `user_message` 事件，再持续返回 `delta` 事件；模型正常结束后保存 `assistant` 消息，并返回 `done` 事件。
 
 问答 prompt 包含：
 
@@ -254,7 +269,19 @@ POST /api/pages/{page_id}/chat
 - 本页最近问答历史。
 - 用户最新问题。
 
-当前页问答不发送截图。它依赖页面文字、讲稿和课程简介。如果后续要支持视觉问答，可以扩展为图文输入，但要注意成本和响应时间。
+当前页问答的图片规则：
+
+- 用户可以通过 `+` 按钮上传 PNG、JPEG、WebP 图片，也可以直接粘贴图片。
+- 单轮最多 4 张图片，单张最大 10MB。
+- 本轮图片会全部加入当前 LLM 请求。
+- 后续追问会自动带入同一页最近 3 张历史图片。
+- 当前页截图不会自动加入问答上下文，只有用户显式上传或粘贴的图片会进入会话上下文。
+
+当前页问答的中断规则：
+
+- 前端中断流式请求时，用户消息和附件可能已经保存。
+- 后端只在完整回答生成结束后保存 `assistant` 消息。
+- 因此中断不会保存半截 assistant 回答，前端会刷新当前页历史来对齐数据库状态。
 
 ## 错误处理原则
 
@@ -268,7 +295,7 @@ POST /api/pages/{page_id}/chat
 
 ### 当前页问答
 
-用户问题先保存。LLM 调用失败时，问题不会丢失，但不会生成 assistant 消息。
+用户问题和本轮图片附件先保存。LLM 调用失败时，问题和图片不会丢失，但不会生成 assistant 消息。
 
 ### LLM 配置错误
 
@@ -301,6 +328,5 @@ POST /api/pages/{page_id}/chat
 - 逐页讲稿生成支持跳过低价值页面。
 - 不同任务使用不同模型，例如课程简介用大模型，问答用快模型。
 - 添加温度、最大 token、重试次数等 LLM 配置。
-- 为当前页问答增加可选截图输入。
+- 为当前页问答增加是否自动带入当前页截图的开关。
 - 将 LLMClient 从 `urllib.request` 迁移到更易测试的 HTTP 客户端。
-

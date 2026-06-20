@@ -17,6 +17,26 @@ from repositories.documents import update_document_status
 from repositories.pages import create_page_record
 
 
+def configure_mupdf_console_output() -> None:
+    """关闭 MuPDF 直接写入控制台的 warning/error 噪声。"""
+
+    # LibreOffice 转换出来的 PPT/PPTX PDF 有时带有不完整的结构树。
+    # MuPDF 会把这类可恢复问题直接打印到 stderr，例如 No common ancestor in structure tree。
+    # 这些信息不一定代表解析失败，真实失败仍然会通过 Python 异常进入下面的错误处理。
+    mupdf_tools = getattr(pymupdf, "TOOLS", None)
+    if mupdf_tools is None:
+        return
+
+    # 不同 PyMuPDF 版本可能缺少其中某个开关，所以逐个判断后再调用。
+    for toggle_name in ("mupdf_display_errors", "mupdf_display_warnings"):
+        toggle = getattr(mupdf_tools, toggle_name, None)
+        if toggle is not None:
+            toggle(False)
+
+
+configure_mupdf_console_output()
+
+
 def get_upload_file_extension(file: UploadFile) -> str:
     """读取上传文件的小写后缀名。"""
 

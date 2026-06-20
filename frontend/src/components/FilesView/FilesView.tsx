@@ -35,6 +35,8 @@ type FilesViewProps = {
   onRegenerateCourseSummary: (document: DocumentItem) => void;
   onToggleLectureNotesPanel: (document: DocumentItem) => void;
   onRegenerateDocumentLectureNotes: (document: DocumentItem) => void;
+  onGenerateRemainingLectureNotes: (document: DocumentItem) => void;
+  onClearLectureNotesQueue: (document: DocumentItem) => void;
   onRegeneratePageLectureNotes: (document: DocumentItem, page: PageItem) => void;
   isDocumentBusy: (documentId: string) => boolean;
   isPageLectureNotesBusy: (documentId: string, pageNumber: number) => boolean;
@@ -79,6 +81,8 @@ export function FilesView({
   onRegenerateCourseSummary,
   onToggleLectureNotesPanel,
   onRegenerateDocumentLectureNotes,
+  onGenerateRemainingLectureNotes,
+  onClearLectureNotesQueue,
   onRegeneratePageLectureNotes,
   isDocumentBusy,
   isPageLectureNotesBusy,
@@ -391,6 +395,21 @@ export function FilesView({
                             <button
                               type="button"
                               className="secondary-action-button"
+                              onClick={() => onGenerateRemainingLectureNotes(document)}
+                              disabled={
+                                isDocumentBusy(document.document_id) ||
+                                document.course_summary_status !== "ready" ||
+                                !document.course_summary
+                              }
+                            >
+                              {documentActionState?.documentId === document.document_id &&
+                              documentActionState.action === "generatingRemainingLectureNotes"
+                                ? "提交中..."
+                                : "生成剩余讲稿"}
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-action-button"
                               onClick={() => onRegenerateDocumentLectureNotes(document)}
                               disabled={
                                 isDocumentBusy(document.document_id) ||
@@ -407,24 +426,19 @@ export function FilesView({
                             <button
                               type="button"
                               className="secondary-action-button"
-                              onClick={() => onToggleDocumentLectureNotesPaused(document)}
-                              disabled={
-                                isDocumentBusy(document.document_id) ||
-                                document.course_summary_status !== "ready" ||
-                                !document.course_summary
-                              }
+                              onClick={() => onClearLectureNotesQueue(document)}
+                              disabled={isDocumentBusy(document.document_id)}
                             >
                               {documentActionState?.documentId === document.document_id &&
-                              (documentActionState.action === "pausingLectureNotes" ||
-                                documentActionState.action === "resumingLectureNotes")
-                                ? "提交中..."
-                                : lectureNotesToggleLabel}
+                              documentActionState.action === "clearingLectureNotesQueue"
+                                ? "清空中..."
+                                : "清空待生成队列"}
                             </button>
                           </div>
                         </div>
 
                         {document.course_summary_status !== "ready" || !document.course_summary ? (
-                          <p>逐页讲稿会等待课程简介生成成功后再生成。</p>
+                          <p>请先手动生成课程简介，再手动生成逐页讲稿。</p>
                         ) : null}
 
                         {expandedLectureNotesDocumentId === document.document_id ? (
@@ -442,12 +456,16 @@ export function FilesView({
                                         {getLectureNotesStatusLabel(page.lecture_notes_status)}
                                       </span>
                                     </div>
-                                    {page.lecture_notes_status === "ready" && page.lecture_notes ? (
+                                    {page.lecture_notes ? (
                                       <MarkdownContent content={page.lecture_notes} variant="compact" />
                                     ) : null}
                                     {page.lecture_notes_status === "processing" ||
                                     page.lecture_notes_status === "pending" ? (
-                                      <p>本页讲稿正在等待或生成中。</p>
+                                      <p>
+                                        {page.lecture_notes
+                                          ? "本页已有旧讲稿，新讲稿正在等待或生成中，完成后会自动替换。"
+                                          : "本页讲稿正在等待或生成中。"}
+                                      </p>
                                     ) : null}
                                     {page.status === "failed" && page.error_message ? (
                                       <p className="document-error">{page.error_message}</p>

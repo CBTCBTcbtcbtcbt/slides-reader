@@ -11,7 +11,7 @@ export type LLMConfigState = "idle" | "loading" | "saving" | "testing" | "succes
 
 export type ReaderState = "idle" | "loading" | "ready" | "error";
 
-export type ReaderRightSidebar = "none" | "summary" | "chat";
+export type ReaderRightSidebar = "none" | "summary" | "chat" | "note";
 
 export type ReaderWorkspaceSize = {
   width: number;
@@ -30,6 +30,12 @@ export type LoadedPdfPage = {
 
 export type NoteBlockLayout = Pick<NoteBlockItem, "x" | "y" | "width" | "height">;
 
+export type PendingChatAttachment = {
+  id: string;
+  file: File;
+  previewUrl: string;
+};
+
 export type NoteBlockResizeDirection =
   | "top"
   | "right"
@@ -42,6 +48,7 @@ export type NoteBlockResizeDirection =
 
 export type NoteBlockInteraction = {
   noteBlockId: string;
+  layoutKey: string;
   documentId: string;
   mode: "drag" | "resize";
   resizeDirection: NoteBlockResizeDirection | null;
@@ -58,6 +65,8 @@ export type DocumentActionState = {
     | "deleting"
     | "regeneratingSummary"
     | "regeneratingLectureNotes"
+    | "generatingRemainingLectureNotes"
+    | "clearingLectureNotesQueue"
     | "pausingLectureNotes"
     | "resumingLectureNotes";
 } | null;

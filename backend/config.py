@@ -33,6 +33,10 @@ CONVERSION_TEMP_DIR = STORAGE_DIR / "conversion-tmp"
 # 这些截图既给前端展示，也给视觉模型输入使用。
 PAGE_IMAGE_STORAGE_DIR = STORAGE_DIR / "pages"
 
+# CHAT_ATTACHMENT_STORAGE_DIR 保存当前页问答里用户上传或粘贴的图片。
+# 这些图片需要持久保存，刷新页面后历史会话仍然可以显示缩略图。
+CHAT_ATTACHMENT_STORAGE_DIR = STORAGE_DIR / "chat-attachments"
+
 # LIBREOFFICE_PROFILE_DIR 是 LibreOffice 命令行转换使用的独立 profile。
 # 单独 profile 可以降低命令行转换和桌面 LibreOffice 实例抢配置锁的概率。
 LIBREOFFICE_PROFILE_DIR = STORAGE_DIR / "libreoffice-profile"
@@ -134,6 +138,18 @@ COURSE_SUMMARY_INPUT_LIMIT = 12000
 # PAGE_CHAT_HISTORY_LIMIT 限制当前页问答带入 prompt 的历史消息数量。
 # 只带最近 20 条，可以避免长时间追问导致 prompt 过长。
 PAGE_CHAT_HISTORY_LIMIT = 20
+
+# PAGE_CHAT_RECENT_IMAGE_LIMIT 限制后续追问自动带入的历史图片数量。
+# 新一轮用户刚上传的图片不受这个历史数量限制。
+PAGE_CHAT_RECENT_IMAGE_LIMIT = 3
+
+# PAGE_CHAT_MAX_ATTACHMENTS_PER_MESSAGE 限制单轮会话可上传的图片数量。
+# 这个限制同时用于后端校验和前端交互提示。
+PAGE_CHAT_MAX_ATTACHMENTS_PER_MESSAGE = 4
+
+# PAGE_CHAT_MAX_ATTACHMENT_BYTES 限制单张会话图片大小。
+# 10MB 对本地工具足够宽松，也能避免一次请求占用过多内存。
+PAGE_CHAT_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 
 # 默认讲稿文字块坐标和尺寸。
 # 当前版本使用阅读区像素坐标，与前端拖拽逻辑保持一致。

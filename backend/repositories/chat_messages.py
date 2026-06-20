@@ -5,9 +5,10 @@ from uuid import uuid4
 
 from config import PAGE_CHAT_HISTORY_LIMIT
 from database import get_database_connection
+from repositories.chat_attachments import attach_attachments_to_messages
 
 
-def row_to_chat_message(row) -> dict[str, str]:
+def row_to_chat_message(row) -> dict[str, object]:
     """把 SQLite 行转换成前端使用的聊天消息字典。"""
 
     # 数据库内部字段 id 在前端容易和其他对象混淆，所以返回 chat_message_id。
@@ -17,10 +18,11 @@ def row_to_chat_message(row) -> dict[str, str]:
         "role": row["role"],
         "content": row["content"],
         "created_at": row["created_at"],
+        "attachments": [],
     }
 
 
-def list_chat_messages_for_page(page_id: str) -> list[dict[str, str]]:
+def list_chat_messages_for_page(page_id: str) -> list[dict[str, object]]:
     """读取某一页的全部问答历史。"""
 
     with get_database_connection() as connection:
@@ -34,10 +36,10 @@ def list_chat_messages_for_page(page_id: str) -> list[dict[str, str]]:
             (page_id,),
         ).fetchall()
 
-    return [row_to_chat_message(row) for row in rows]
+    return attach_attachments_to_messages([row_to_chat_message(row) for row in rows])
 
 
-def list_chat_messages_for_pages(page_ids: list[str]) -> dict[str, list[dict[str, str]]]:
+def list_chat_messages_for_pages(page_ids: list[str]) -> dict[str, list[dict[str, object]]]:
     """批量读取多个页面的问答历史，并按 page_id 分组。"""
 
     # 没有页面时直接返回空字典，避免拼出无效 SQL。
@@ -56,14 +58,17 @@ def list_chat_messages_for_pages(page_ids: list[str]) -> dict[str, list[dict[str
             page_ids,
         ).fetchall()
 
-    messages_by_page: dict[str, list[dict[str, str]]] = {page_id: [] for page_id in page_ids}
-    for row in rows:
-        messages_by_page.setdefault(row["page_id"], []).append(row_to_chat_message(row))
+    messages = attach_attachments_to_messages([row_to_chat_message(row) for row in rows])
+
+    messages_by_page: dict[str, list[dict[str, object]]] = {page_id: [] for page_id in page_ids}
+    for message in messages:
+        message_page_id = str(message["page_id"])
+        messages_by_page.setdefault(message_page_id, []).append(message)
 
     return messages_by_page
 
 
-def list_recent_chat_messages_for_prompt(page_id: str) -> list[dict[str, str]]:
+def list_recent_chat_messages_for_prompt(page_id: str) -> list[dict[str, object]]:
     """读取构造问答 prompt 时使用的最近聊天历史。"""
 
     with get_database_connection() as connection:
@@ -82,10 +87,10 @@ def list_recent_chat_messages_for_prompt(page_id: str) -> list[dict[str, str]]:
             (page_id, PAGE_CHAT_HISTORY_LIMIT),
         ).fetchall()
 
-    return [row_to_chat_message(row) for row in rows]
+    return attach_attachments_to_messages([row_to_chat_message(row) for row in rows])
 
 
-def create_chat_message(page_id: str, role: str, content: str) -> dict[str, str]:
+def create_chat_message(page_id: str, role: str, content: str) -> dict[str, object]:
     """向 chat_messages 表写入一条问答消息。"""
 
     # role 只允许这两个值，防止后续 prompt 构造出现未知身份。

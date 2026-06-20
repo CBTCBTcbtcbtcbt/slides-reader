@@ -443,6 +443,24 @@
   gap: 10px;
 }
 
+.course-summary-sidebar--chat {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.course-summary-sidebar--chat .course-summary-sidebar__content {
+  overflow: hidden;
+  align-content: stretch;
+}
+
+.course-summary-sidebar--chat .page-chat-content {
+  height: 100%;
+}
+
+.reader-note-sidebar-content {
+  min-width: 0;
+  display: block;
+}
+
 .course-summary-sidebar__content p {
   margin: 0;
   overflow-wrap: anywhere;
@@ -455,16 +473,27 @@
 }
 
 .course-summary-sidebar .page-chat-form {
-  grid-template-columns: 1fr;
+  min-width: 0;
+}
+
+.course-summary-sidebar .page-chat-composer {
+  border-radius: 24px;
+}
+
+.course-summary-sidebar .page-chat-composer-row {
+  align-items: end;
 }
 
 .course-summary-sidebar .page-chat-input-label textarea {
-  min-height: 96px;
-  max-height: 180px;
+  min-height: 82px;
+  max-height: 150px;
+  resize: vertical;
 }
 
-.course-summary-sidebar .page-chat-form .page-turn-button {
-  width: fit-content;
+.course-summary-sidebar .page-chat-attachment,
+.course-summary-sidebar .page-chat-pending-attachment {
+  width: 58px;
+  height: 58px;
 }
 
 .course-summary-sidebar > .secondary-action-button {
@@ -569,10 +598,10 @@
 .reader-chat-dock {
   grid-area: chat;
   z-index: 25;
-  grid-template-columns: minmax(220px, 0.7fr) minmax(280px, 1fr) minmax(260px, 1fr);
-  align-items: end;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  align-items: stretch;
   min-height: 0;
-  max-height: 190px;
+  max-height: 260px;
   overflow: hidden;
   border-color: #bfcce0;
   background: rgb(251 252 255 / 98%);
@@ -594,21 +623,27 @@
 }
 
 .reader-chat-dock .page-chat-header {
-  display: grid;
+  display: flex;
   min-width: 0;
 }
 
 .reader-chat-dock .page-chat-history {
-  max-height: 126px;
+  max-height: none;
 }
 
 .reader-chat-dock .page-chat-form {
-  align-self: stretch;
+  min-width: 0;
 }
 
 .reader-chat-dock .page-chat-input-label textarea {
-  min-height: 78px;
-  max-height: 118px;
+  min-height: 42px;
+  max-height: 92px;
+}
+
+.reader-chat-dock .page-chat-attachment,
+.reader-chat-dock .page-chat-pending-attachment {
+  width: 56px;
+  height: 56px;
 }
 
 .reader-chat-dock .page-chat-status {

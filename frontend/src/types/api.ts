@@ -48,11 +48,24 @@ export type NoteBlockItem = {
   updated_at: string;
 };
 
+export type ChatAttachmentItem = {
+  attachment_id: string;
+  chat_message_id: string;
+  page_id: string;
+  kind: "image";
+  filename: string;
+  mime_type: string;
+  file_size: number;
+  file_url: string;
+  created_at: string;
+};
+
 export type ChatMessageItem = {
   chat_message_id: string;
   page_id: string;
   role: "user" | "assistant";
   content: string;
+  attachments: ChatAttachmentItem[];
   created_at: string;
 };
 
@@ -106,6 +119,25 @@ export type PageChatResponse = {
   assistant_message: ChatMessageItem;
   messages: ChatMessageItem[];
 };
+
+export type PageChatStreamEvent =
+  | {
+      type: "user_message";
+      message: ChatMessageItem;
+    }
+  | {
+      type: "delta";
+      content: string;
+    }
+  | {
+      type: "done";
+      assistant_message: ChatMessageItem;
+      messages: ChatMessageItem[];
+    }
+  | {
+      type: "error";
+      message: string;
+    };
 
 export type DocumentStatusPageItem = {
   page_id: string;

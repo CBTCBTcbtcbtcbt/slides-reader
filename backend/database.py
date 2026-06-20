@@ -114,6 +114,53 @@ def init_database() -> None:
             """
         )
 
+        # chat_attachments 表保存问答消息关联的图片附件元数据。
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS chat_attachments (
+                id TEXT PRIMARY KEY,
+                chat_message_id TEXT NOT NULL,
+                page_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                original_filename TEXT NOT NULL,
+                mime_type TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                file_size INTEGER NOT NULL,
+                display_order INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(chat_message_id) REFERENCES chat_messages(id),
+                FOREIGN KEY(page_id) REFERENCES pages(id)
+            )
+            """
+        )
+
+        # lecture_notes_queue 表保存逐页讲稿的待生成队列。
+        # 同一个 page_id 只保留一条队列记录，重复点击重生成只会把旧记录更新回 waiting。
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS lecture_notes_queue (
+                id TEXT PRIMARY KEY,
+                document_id TEXT NOT NULL,
+                page_id TEXT NOT NULL,
+                page_number INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(page_id),
+                FOREIGN KEY(document_id) REFERENCES documents(id),
+                FOREIGN KEY(page_id) REFERENCES pages(id)
+            )
+            """
+        )
+
+        # 队列查询总是按文档和状态过滤，再按页码取最早任务，因此补充索引减少扫描。
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_lecture_notes_queue_document_status
+            ON lecture_notes_queue(document_id, status, page_number)
+            """
+        )
+
         # app_settings 表保存 WebUI 可编辑的 key-value 配置。
         connection.execute(
             """
