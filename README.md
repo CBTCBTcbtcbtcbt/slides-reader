@@ -87,6 +87,18 @@ Windows PowerShell：
 python start.py
 ```
 
+启动成功后会自动打开浏览器。也可以只打印地址：
+
+```powershell
+python start.py --no-open
+```
+
+排查环境问题：
+
+```powershell
+python start.py --diagnostics
+```
+
 启动成功后终端会显示唯一需要打开的地址：
 
 ```text

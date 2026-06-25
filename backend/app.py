@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import init_database
+from logging_config import configure_backend_logging
 from routes import documents, exams, health, llm, pages, phase_exams, wrong_questions
 
 
@@ -24,6 +25,9 @@ def create_app() -> FastAPI:
     返回值：
         FastAPI：已经挂载路由和 CORS 中间件的应用实例。
     """
+
+    # 启动阶段先配置日志，保证后续初始化和后台任务异常能进入统一日志文件。
+    configure_backend_logging()
 
     # FastAPI 应用对象是整个后端服务的核心入口，所有 API 都挂载在它上面。
     application = FastAPI(
