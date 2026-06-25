@@ -63,6 +63,7 @@ export type DocumentActionState = {
   action:
     | "renaming"
     | "deleting"
+    | "generatingExam"
     | "regeneratingSummary"
     | "regeneratingLectureNotes"
     | "generatingRemainingLectureNotes"

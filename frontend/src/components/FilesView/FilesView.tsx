@@ -33,6 +33,7 @@ type FilesViewProps = {
   phaseExamsLoading: boolean;
   onRefreshPhaseExams: () => void;
   onTakePhaseExam: (phaseExam: PhaseExamItem) => void;
+  onDeletePhaseExam: (phaseExam: PhaseExamItem) => void;
   onReturnToReader: () => void;
   onFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onUploadSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
@@ -89,6 +90,7 @@ export function FilesView({
   phaseExamsLoading,
   onRefreshPhaseExams,
   onTakePhaseExam,
+  onDeletePhaseExam,
   onReturnToReader,
   onFileChange,
   onUploadSubmit,
@@ -284,7 +286,10 @@ export function FilesView({
                           !document.course_summary
                         }
                       >
-                        生成试卷
+                        {documentActionState?.documentId === document.document_id &&
+                        documentActionState.action === "generatingExam"
+                          ? "提交中..."
+                          : "生成试卷"}
                       </button>
                       <button
                         type="button"
@@ -557,7 +562,10 @@ export function FilesView({
                               !document.course_summary
                             }
                           >
-                            生成新试卷
+                            {documentActionState?.documentId === document.document_id &&
+                            documentActionState.action === "generatingExam"
+                              ? "提交中..."
+                              : "生成新试卷"}
                           </button>
                         </div>
                         {examsLoadingByDocument[document.document_id] ? (
@@ -656,14 +664,24 @@ export function FilesView({
                     <p className="document-error">{phaseExam.error_message}</p>
                   ) : null}
                 </div>
-                <button
-                  type="button"
-                  className="secondary-action-button"
-                  onClick={() => onTakePhaseExam(phaseExam)}
-                  disabled={phaseExam.status !== "ready" || !phaseExam.exam_id}
-                >
-                  {phaseExam.status === "ready" ? "开始考试" : "生成中..."}
-                </button>
+                <div className="phase-exam-item-actions">
+                  <button
+                    type="button"
+                    className="secondary-action-button"
+                    onClick={() => onTakePhaseExam(phaseExam)}
+                    disabled={phaseExam.status !== "ready" || !phaseExam.exam_id}
+                  >
+                    {phaseExam.status === "ready" ? "开始考试" : "生成中..."}
+                  </button>
+                  <button
+                    type="button"
+                    className="danger-button"
+                    onClick={() => onDeletePhaseExam(phaseExam)}
+                    disabled={phaseExamsLoading}
+                  >
+                    删除
+                  </button>
+                </div>
               </li>
             ))}
           </ul>

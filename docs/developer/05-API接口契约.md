@@ -401,6 +401,7 @@ GET /api/llm/config
   "course_summary_prompt": "string",
   "lecture_notes_prompt": "string",
   "page_chat_prompt": "string",
+  "exam_generation_prompt": "string",
   "api_key_configured": true,
   "api_key_preview": "sk-p********abcd"
 }
@@ -427,7 +428,8 @@ PATCH /api/llm/config
   "timeout_seconds": 60,
   "course_summary_prompt": "课程简介 prompt",
   "lecture_notes_prompt": "逐页讲稿 prompt",
-  "page_chat_prompt": "当前页问答 prompt"
+  "page_chat_prompt": "当前页问答 prompt",
+  "exam_generation_prompt": "试卷生成 prompt"
 }
 ```
 
@@ -438,7 +440,7 @@ PATCH /api/llm/config
 - `timeout_seconds` 必填，必须在 `5` 到 `300` 秒之间。
 - `api_key` 不传或为 `null` 时保留旧密钥。
 - `api_key` 传空字符串时清空密钥。
-- 三个 prompt 如果传入，必须不是空字符串。
+- 四个 prompt 如果传入，必须不是空字符串。
 
 成功响应与读取配置接口相同。
 
@@ -822,6 +824,228 @@ GET /api/chat-attachments/{attachment_id}/file
 - `404`：附件不存在。
 - `404`：附件文件被手动删除。
 - `500`：附件路径越过允许目录。
+
+## 试卷列表
+
+```text
+GET /api/exams
+GET /api/documents/{document_id}/exams
+```
+
+用途：
+
+- 文件页展示某份文档下的所有试卷。
+- 阶段考试底层也复用普通试卷表，因此全局列表可以看到所有试卷。
+
+成功响应：
+
+```json
+[
+  {
+    "id": "exam-id",
+    "document_id": "document-id",
+    "title": "试卷标题",
+    "description": "试卷说明",
+    "status": "ready",
+    "error_message": null,
+    "total_score": 100,
+    "latest_attempt_score": 80,
+    "created_at": "string"
+  }
+]
+```
+
+`status` 常见值：
+
+- `pending`：已创建记录，后台任务尚未正式生成。
+- `processing`：后台正在调用 LLM 生成题目。
+- `ready`：题目已经生成，可以答题。
+- `failed`：生成失败，`error_message` 有失败原因。
+
+## 生成试卷
+
+```text
+POST /api/documents/{document_id}/exams/generate
+```
+
+请求体：
+
+```json
+{
+  "difficulty": "medium"
+}
+```
+
+成功响应：
+
+```json
+{
+  "status": "processing",
+  "exam_id": "string"
+}
+```
+
+后端行为：
+
+1. 先创建 `pending` 试卷记录。
+2. 在线程中异步生成试卷。
+3. 生成成功后写入题目，并把试卷状态改为 `ready`。
+4. 生成失败时把试卷状态改为 `failed`。
+
+## 读取试卷和题目
+
+```text
+GET /api/exams/{exam_id}?include_questions=false
+GET /api/exams/{exam_id}/questions?include_answer=false
+```
+
+用途：
+
+- 答题页刷新后先读取试卷元数据，再读取不含答案的题目。
+- 结果页或管理场景可以读取包含答案和解析的完整试卷。
+
+重要规则：
+
+- `include_questions=false` 时，`GET /api/exams/{exam_id}` 只返回试卷元数据。
+- `include_answer=false` 时，题目列表会移除 `answer` 和 `explanation`，避免答题前暴露答案。
+
+## 提交答题和读取结果
+
+```text
+POST /api/exams/{exam_id}/attempts
+GET /api/exams/{exam_id}/attempts
+GET /api/exams/{exam_id}/attempts/{attempt_id}/result
+```
+
+提交答题请求体：
+
+```json
+{
+  "answers": {
+    "question-id": "A"
+  }
+}
+```
+
+提交成功响应会返回完整判分结果：
+
+```json
+{
+  "status": "ok",
+  "attempt": {
+    "id": "attempt-id",
+    "exam_id": "exam-id",
+    "started_at": "string",
+    "finished_at": null,
+    "score": 80,
+    "answers": {}
+  },
+  "total_score": 80,
+  "max_score": 100,
+  "questions": [],
+  "question_results": [
+    {
+      "question_id": "question-id",
+      "user_answer": "A",
+      "correct_answer": "B",
+      "is_correct": false,
+      "score": 0,
+      "max_score": 5
+    }
+  ]
+}
+```
+
+`GET /api/exams/{exam_id}/attempts/{attempt_id}/result` 用于结果页刷新恢复。它会重新读取试卷题目和答题记录并重新构造同样的判分结果。
+
+## 删除试卷
+
+```text
+DELETE /api/exams/{exam_id}
+```
+
+成功状态码：
+
+```text
+204 No Content
+```
+
+删除内容：
+
+- `wrong_questions` 中该试卷关联的错题。
+- `exam_attempts` 中该试卷的答题记录。
+- `exam_questions` 中该试卷的题目。
+- `exams` 中该试卷记录。
+
+## 错题本
+
+```text
+GET /api/wrong-questions
+GET /api/documents/{document_id}/wrong-questions
+POST /api/wrong-questions/{wrong_id}/review
+DELETE /api/wrong-questions/{wrong_id}
+GET /api/wrong-questions/statistics?document_id={document_id}
+```
+
+用途：
+
+- 展示所有错题或某份文档下的错题。
+- 标记错题已复习。
+- 从错题本移除某条错题记录。
+- 统计错题知识点，供阶段考试生成时加权。
+
+删除错题只删除 `wrong_questions` 记录，不删除原试卷题目和答题记录。
+
+## 阶段考试
+
+```text
+GET /api/phase-exams
+POST /api/phase-exams/generate
+GET /api/phase-exams/{phase_exam_id}
+DELETE /api/phase-exams/{phase_exam_id}
+```
+
+生成阶段考试请求体：
+
+```json
+{
+  "document_ids": ["document-id-1", "document-id-2"],
+  "name": "期中复习卷",
+  "difficulty": "medium"
+}
+```
+
+生成成功响应：
+
+```json
+{
+  "status": "processing",
+  "phase_exam_id": "string",
+  "exam_id": null
+}
+```
+
+阶段考试对象：
+
+```json
+{
+  "id": "phase-exam-id",
+  "name": "期中复习卷",
+  "document_ids": ["document-id-1", "document-id-2"],
+  "difficulty": "medium",
+  "exam_id": "exam-id",
+  "status": "ready",
+  "error_message": null,
+  "created_at": "string"
+}
+```
+
+重要行为：
+
+- 阶段考试会先创建一条 `phase_exams` 记录，再创建一条普通 `exams` 记录作为题目容器。
+- `phase_exams.exam_id` 指向这条普通试卷，前端开始阶段考试时实际进入普通试卷答题页。
+- 生成失败时，`phase_exams.status` 和关联 `exams.status` 都会进入 `failed`。
+- 删除阶段考试会同步删除关联普通试卷、题目、答题记录和错题。
 
 ## 重命名文档
 

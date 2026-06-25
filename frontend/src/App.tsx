@@ -37,7 +37,11 @@ import {
   readExamQuestions,
   submitExamAttempt,
 } from "./api/exams";
-import { generatePhaseExam, listPhaseExams } from "./api/phaseExams";
+import {
+  deletePhaseExam as deletePhaseExamRequest,
+  generatePhaseExam,
+  listPhaseExams,
+} from "./api/phaseExams";
 import {
   deleteWrongQuestion,
   listWrongQuestions,
@@ -130,6 +134,11 @@ function parsePositiveInteger(value: string | null) {
   }
 
   return parsedValue;
+}
+
+function isAsyncExamStatus(status: string) {
+  // 考试生成任务在 pending / processing 时仍可能由后台线程继续推进，需要前端轮询刷新列表。
+  return status === "pending" || status === "processing";
 }
 
 function App() {
@@ -242,7 +251,6 @@ function App() {
   const [examTakeLoading, setExamTakeLoading] = useState(false);
   const [wrongQuestions, setWrongQuestions] = useState<WrongQuestionItem[]>([]);
   const [wrongQuestionsLoading, setWrongQuestionsLoading] = useState(false);
-  const [phaseExamCreating, setPhaseExamCreating] = useState(false);
   const [phaseExams, setPhaseExams] = useState<PhaseExamItem[]>([]);
   const [phaseExamsLoading, setPhaseExamsLoading] = useState(false);
 
@@ -478,6 +486,37 @@ function App() {
     });
     void loadPhaseExams();
   }, [visibleView, hasLoadedDocuments, documents]);
+
+  useEffect(() => {
+    // 文件页存在生成中的普通试卷或阶段考试时，定时刷新列表，避免用户必须手动点刷新。
+    if (visibleView !== "files" || !hasLoadedDocuments) {
+      return;
+    }
+
+    const documentIdsWithRunningExams = documents
+      .map((document) => document.document_id)
+      .filter((documentId) =>
+        (examsByDocument[documentId] ?? []).some((exam) => isAsyncExamStatus(exam.status)),
+      );
+    const shouldRefreshPhaseExams = phaseExams.some((phaseExam) =>
+      isAsyncExamStatus(phaseExam.status),
+    );
+
+    if (documentIdsWithRunningExams.length === 0 && !shouldRefreshPhaseExams) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      documentIdsWithRunningExams.forEach((documentId) => {
+        void loadDocumentExams(documentId);
+      });
+      if (shouldRefreshPhaseExams) {
+        void loadPhaseExams();
+      }
+    }, DOCUMENT_STATUS_POLL_INTERVAL_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [documents, examsByDocument, hasLoadedDocuments, phaseExams, visibleView]);
 
   useEffect(() => {
     // 进入错题本页面时自动加载错题数据。
@@ -1704,7 +1743,7 @@ function App() {
   }
 
   async function handleGenerateExam(documentId: string, difficulty: string = "medium") {
-    setDocumentActionState({ documentId, action: "regeneratingSummary" });
+    setDocumentActionState({ documentId, action: "generatingExam" });
     try {
       await generateExamRequest(documentId, difficulty);
       setDocumentActionMessage("试卷已开始生成，稍后刷新查看。");
@@ -1813,7 +1852,6 @@ function App() {
     name: string,
     difficulty: string,
   ) {
-    setPhaseExamCreating(true);
     try {
       await generatePhaseExam(documentIds, name, difficulty);
       await loadPhaseExams();
@@ -1824,8 +1862,30 @@ function App() {
         error instanceof Error ? error.message : "阶段考试生成失败，请稍后重试。",
       );
       throw error;
+    }
+  }
+
+  async function handleDeletePhaseExam(phaseExam: PhaseExamItem) {
+    const confirmed = window.confirm(
+      `确定要删除阶段考试“${phaseExam.name}”吗？关联试卷、答题记录和错题也会一起删除。`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setDocumentActionMessage("");
+    setPhaseExamsLoading(true);
+    try {
+      await deletePhaseExamRequest(phaseExam.id);
+      setDocumentActionMessage("阶段考试已删除。");
+      await loadPhaseExams();
+      await loadWrongQuestions();
+    } catch (error) {
+      setDocumentActionMessage(
+        error instanceof Error ? error.message : "阶段考试删除失败，请稍后重试。",
+      );
     } finally {
-      setPhaseExamCreating(false);
+      setPhaseExamsLoading(false);
     }
   }
 
@@ -2330,6 +2390,9 @@ function App() {
               if (phaseExam.exam_id) {
                 void handleTakeExam(phaseExam.exam_id);
               }
+            }}
+            onDeletePhaseExam={(phaseExam) => {
+              void handleDeletePhaseExam(phaseExam);
             }}
             onReturnToReader={returnToReader}
             onFileChange={handleFileChange}

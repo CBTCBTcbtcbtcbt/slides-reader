@@ -18,14 +18,19 @@ export function PhaseExamCreateView({
   const [difficulty, setDifficulty] = useState("medium");
   const [isCreating, setIsCreating] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState<"success" | "error">("success");
 
   function toggleDocument(documentId: string) {
+    setDocumentSelected(documentId, !selectedIds.has(documentId));
+  }
+
+  function setDocumentSelected(documentId: string, shouldSelect: boolean) {
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(documentId)) {
-        next.delete(documentId);
-      } else {
+      if (shouldSelect) {
         next.add(documentId);
+      } else {
+        next.delete(documentId);
       }
       return next;
     });
@@ -35,10 +40,12 @@ export function PhaseExamCreateView({
     event.preventDefault();
 
     if (selectedIds.size === 0) {
+      setMessageType("error");
       setMessage("请至少选择一个课件。");
       return;
     }
     if (!name.trim()) {
+      setMessageType("error");
       setMessage("请输入阶段考试名称。");
       return;
     }
@@ -47,8 +54,10 @@ export function PhaseExamCreateView({
     setMessage("");
     try {
       await onCreate(Array.from(selectedIds), name.trim(), difficulty);
-      setMessage("阶段考试生成成功！");
+      setMessageType("success");
+      setMessage("阶段考试已开始生成。");
     } catch (error) {
+      setMessageType("error");
       setMessage(error instanceof Error ? error.message : "生成失败");
     } finally {
       setIsCreating(false);
@@ -83,7 +92,9 @@ export function PhaseExamCreateView({
                     <input
                       type="checkbox"
                       checked={selectedIds.has(doc.document_id)}
-                      onChange={() => toggleDocument(doc.document_id)}
+                      onChange={(event) => {
+                        setDocumentSelected(doc.document_id, event.currentTarget.checked);
+                      }}
                       onClick={(e) => e.stopPropagation()}
                     />
                     <span className="phase-exam-document-title">
@@ -129,7 +140,7 @@ export function PhaseExamCreateView({
           {message && (
             <div
               className={`phase-exam-message ${
-                message.includes("成功")
+                messageType === "success"
                   ? "phase-exam-message-success"
                   : "phase-exam-message-error"
               }`}
