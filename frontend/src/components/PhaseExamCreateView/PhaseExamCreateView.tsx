@@ -20,10 +20,6 @@ export function PhaseExamCreateView({
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"success" | "error">("success");
 
-  function toggleDocument(documentId: string) {
-    setDocumentSelected(documentId, !selectedIds.has(documentId));
-  }
-
   function setDocumentSelected(documentId: string, shouldSelect: boolean) {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -87,22 +83,22 @@ export function PhaseExamCreateView({
                     className={`phase-exam-document-item ${
                       selectedIds.has(doc.document_id) ? "selected" : ""
                     }`}
-                    onClick={() => toggleDocument(doc.document_id)}
                   >
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.has(doc.document_id)}
-                      onChange={(event) => {
-                        setDocumentSelected(doc.document_id, event.currentTarget.checked);
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                    <span className="phase-exam-document-title">
-                      {doc.title}
-                    </span>
-                    <span className="phase-exam-document-pages">
-                      {doc.page_count} 页
-                    </span>
+                    <label className="phase-exam-document-label">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(doc.document_id)}
+                        onChange={(event) => {
+                          setDocumentSelected(doc.document_id, event.currentTarget.checked);
+                        }}
+                      />
+                      <span className="phase-exam-document-title">
+                        {doc.title}
+                      </span>
+                      <span className="phase-exam-document-pages">
+                        {doc.page_count} 页
+                      </span>
+                    </label>
                   </li>
                 ))}
               </ul>

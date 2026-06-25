@@ -28,25 +28,6 @@ import {
   saveLlmConfig as saveLlmConfigRequest,
   testLlmConfig as testLlmConfigRequest,
 } from "./api/llm";
-import {
-  deleteExam as deleteExamRequest,
-  generateExam as generateExamRequest,
-  listDocumentExams,
-  readExamAttemptResult,
-  readExamMetadata,
-  readExamQuestions,
-  submitExamAttempt,
-} from "./api/exams";
-import {
-  deletePhaseExam as deletePhaseExamRequest,
-  generatePhaseExam,
-  listPhaseExams,
-} from "./api/phaseExams";
-import {
-  deleteWrongQuestion,
-  listWrongQuestions,
-  reviewWrongQuestion,
-} from "./api/wrongQuestions";
 import { ExamResultView } from "./components/ExamResultView/ExamResultView";
 import { ExamTakeView } from "./components/ExamTakeView/ExamTakeView";
 import { FilesView } from "./components/FilesView/FilesView";
@@ -57,20 +38,16 @@ import { PhaseExamCreateView } from "./components/PhaseExamCreateView/PhaseExamC
 import { SettingsView } from "./components/SettingsView/SettingsView";
 import { WrongBookView } from "./components/WrongBookView/WrongBookView";
 import { useDocumentPolling } from "./hooks/useDocumentPolling";
+import { useExamWorkflows } from "./hooks/useExamWorkflows";
 import { useNoteBlockInteraction } from "./hooks/useNoteBlockInteraction";
 import { usePdfSizing } from "./hooks/usePdfSizing";
 import type {
   ChatMessageItem,
   DocumentItem,
   DocumentStatusResponse,
-  ExamAttemptResult,
-  ExamItem,
-  ExamQuestionForTaking,
   LLMConfigResponse,
   LLMConfigUpdatePayload,
   PageItem,
-  PhaseExamItem,
-  WrongQuestionItem,
 } from "./types/api";
 const ReaderView = lazy(() =>
   import("./components/ReaderView/ReaderView").then((module) => ({ default: module.ReaderView })),
@@ -134,11 +111,6 @@ function parsePositiveInteger(value: string | null) {
   }
 
   return parsedValue;
-}
-
-function isAsyncExamStatus(status: string) {
-  // 考试生成任务在 pending / processing 时仍可能由后台线程继续推进，需要前端轮询刷新列表。
-  return status === "pending" || status === "processing";
 }
 
 function App() {
@@ -240,20 +212,6 @@ function App() {
   const pageChatPromptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const examGenerationPromptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // 试卷、错题本、阶段考试相关状态。
-  const [examsByDocument, setExamsByDocument] = useState<Record<string, ExamItem[]>>({});
-  const [examsLoadingByDocument, setExamsLoadingByDocument] = useState<Record<string, boolean>>({});
-  const [currentExam, setCurrentExam] = useState<ExamItem | null>(null);
-  const [currentExamQuestionsWithoutAnswer, setCurrentExamQuestionsWithoutAnswer] = useState<
-    ExamQuestionForTaking[]
-  >([]);
-  const [currentExamResult, setCurrentExamResult] = useState<ExamAttemptResult | null>(null);
-  const [examTakeLoading, setExamTakeLoading] = useState(false);
-  const [wrongQuestions, setWrongQuestions] = useState<WrongQuestionItem[]>([]);
-  const [wrongQuestionsLoading, setWrongQuestionsLoading] = useState(false);
-  const [phaseExams, setPhaseExams] = useState<PhaseExamItem[]>([]);
-  const [phaseExamsLoading, setPhaseExamsLoading] = useState(false);
-
   // 页面讲稿、文档展开状态和当前页问答都按 document_id 或 page_id 保存，方便阅读器和文件页复用。
   const [expandedLectureNotesDocumentId, setExpandedLectureNotesDocumentId] = useState<
     string | null
@@ -308,6 +266,43 @@ function App() {
     documentStatusById,
     intervalMs: DOCUMENT_STATUS_POLL_INTERVAL_MS,
     loadDocumentStatus,
+  });
+
+  const {
+    examsByDocument,
+    examsLoadingByDocument,
+    currentExam,
+    currentExamQuestionsWithoutAnswer,
+    currentExamResult,
+    examTakeLoading,
+    wrongQuestions,
+    phaseExams,
+    phaseExamsLoading,
+    loadPhaseExams,
+    handleGenerateExam,
+    handleDeleteExam,
+    handleTakeExam,
+    handleSubmitExam,
+    handleRetryExam,
+    loadWrongQuestions,
+    handleReviewWrongQuestion,
+    handleDeleteWrongQuestion,
+    handleCreatePhaseExam,
+    handleDeletePhaseExam,
+  } = useExamWorkflows({
+    documents,
+    hasLoadedDocuments,
+    visibleView,
+    isWrongBookRoute,
+    isExamTakeRoute,
+    isExamResultRoute,
+    routeExamId,
+    routeAttemptId,
+    pollIntervalMs: DOCUMENT_STATUS_POLL_INTERVAL_MS,
+    filesRoute: FILES_ROUTE,
+    navigate,
+    setDocumentActionState,
+    setDocumentActionMessage,
   });
 
   const {
@@ -474,70 +469,6 @@ function App() {
 
     resizePromptTextarea(courseSummaryPromptTextareaRef.current);
   }, [courseSummaryPrompt, isCourseSummaryPromptExpanded]);
-
-  useEffect(() => {
-    // 文件页可见且文档列表加载完成后，自动加载每份文档的试卷列表和阶段考试列表。
-    if (visibleView !== "files" || !hasLoadedDocuments) {
-      return;
-    }
-
-    documents.forEach((document) => {
-      void loadDocumentExams(document.document_id);
-    });
-    void loadPhaseExams();
-  }, [visibleView, hasLoadedDocuments, documents]);
-
-  useEffect(() => {
-    // 文件页存在生成中的普通试卷或阶段考试时，定时刷新列表，避免用户必须手动点刷新。
-    if (visibleView !== "files" || !hasLoadedDocuments) {
-      return;
-    }
-
-    const documentIdsWithRunningExams = documents
-      .map((document) => document.document_id)
-      .filter((documentId) =>
-        (examsByDocument[documentId] ?? []).some((exam) => isAsyncExamStatus(exam.status)),
-      );
-    const shouldRefreshPhaseExams = phaseExams.some((phaseExam) =>
-      isAsyncExamStatus(phaseExam.status),
-    );
-
-    if (documentIdsWithRunningExams.length === 0 && !shouldRefreshPhaseExams) {
-      return;
-    }
-
-    const intervalId = window.setInterval(() => {
-      documentIdsWithRunningExams.forEach((documentId) => {
-        void loadDocumentExams(documentId);
-      });
-      if (shouldRefreshPhaseExams) {
-        void loadPhaseExams();
-      }
-    }, DOCUMENT_STATUS_POLL_INTERVAL_MS);
-
-    return () => window.clearInterval(intervalId);
-  }, [documents, examsByDocument, hasLoadedDocuments, phaseExams, visibleView]);
-
-  useEffect(() => {
-    // 进入错题本页面时自动加载错题数据。
-    if (isWrongBookRoute) {
-      void loadWrongQuestions();
-    }
-  }, [isWrongBookRoute]);
-
-  useEffect(() => {
-    // 直接访问或刷新答题页时，根据 URL 中的 examId 重新加载无答案题目。
-    if (isExamTakeRoute && routeExamId) {
-      void loadExamForTaking(routeExamId);
-    }
-  }, [isExamTakeRoute, routeExamId]);
-
-  useEffect(() => {
-    // 直接访问或刷新结果页时，根据 URL 中的 examId 和 attemptId 重新加载判分结果。
-    if (isExamResultRoute && routeExamId && routeAttemptId) {
-      void loadExamAttemptResult(routeExamId, routeAttemptId);
-    }
-  }, [isExamResultRoute, routeExamId, routeAttemptId]);
 
   useEffect(() => {
     if (!isLectureNotesPromptExpanded) {
@@ -1205,16 +1136,6 @@ function App() {
         delete next[document.document_id];
         return next;
       });
-      setExamsByDocument((current) => {
-        const next = { ...current };
-        delete next[document.document_id];
-        return next;
-      });
-      setExamsLoadingByDocument((current) => {
-        const next = { ...current };
-        delete next[document.document_id];
-        return next;
-      });
       if (expandedLectureNotesDocumentId === document.document_id) {
         setExpandedLectureNotesDocumentId(null);
       }
@@ -1668,224 +1589,6 @@ function App() {
       );
     } finally {
       setDocumentActionState(null);
-    }
-  }
-
-  async function loadDocumentExams(documentId: string) {
-    setExamsLoadingByDocument((current) => ({ ...current, [documentId]: true }));
-    try {
-      const data = await listDocumentExams(documentId);
-      setExamsByDocument((current) => ({ ...current, [documentId]: data }));
-    } catch (error) {
-      setDocumentActionMessage(
-        error instanceof Error ? error.message : "试卷列表加载失败，请稍后重试。",
-      );
-    } finally {
-      setExamsLoadingByDocument((current) => ({ ...current, [documentId]: false }));
-    }
-  }
-
-  async function loadPhaseExams() {
-    setPhaseExamsLoading(true);
-    try {
-      const data = await listPhaseExams();
-      setPhaseExams(data);
-    } catch (error) {
-      setDocumentActionMessage(
-        error instanceof Error ? error.message : "阶段考试列表加载失败，请稍后重试。",
-      );
-    } finally {
-      setPhaseExamsLoading(false);
-    }
-  }
-
-  async function loadExamForTaking(examId: string) {
-    setExamTakeLoading(true);
-    setCurrentExamResult(null);
-    try {
-      const [examMetadata, questionsWithoutAnswer] = await Promise.all([
-        readExamMetadata(examId),
-        readExamQuestions(examId, false),
-      ]);
-      setCurrentExam(examMetadata);
-      setCurrentExamQuestionsWithoutAnswer(questionsWithoutAnswer as ExamQuestionForTaking[]);
-      setDocumentActionMessage("");
-    } catch (error) {
-      setCurrentExam(null);
-      setCurrentExamQuestionsWithoutAnswer([]);
-      setDocumentActionMessage(
-        error instanceof Error ? error.message : "试卷加载失败，请稍后重试。",
-      );
-    } finally {
-      setExamTakeLoading(false);
-    }
-  }
-
-  async function loadExamAttemptResult(examId: string, attemptId: string) {
-    setExamTakeLoading(true);
-    try {
-      const [examMetadata, result] = await Promise.all([
-        readExamMetadata(examId),
-        readExamAttemptResult(examId, attemptId),
-      ]);
-      setCurrentExam(examMetadata);
-      setCurrentExamResult(result);
-      setCurrentExamQuestionsWithoutAnswer([]);
-      setDocumentActionMessage("");
-    } catch (error) {
-      setCurrentExamResult(null);
-      setDocumentActionMessage(
-        error instanceof Error ? error.message : "考试结果加载失败，请稍后重试。",
-      );
-    } finally {
-      setExamTakeLoading(false);
-    }
-  }
-
-  async function handleGenerateExam(documentId: string, difficulty: string = "medium") {
-    setDocumentActionState({ documentId, action: "generatingExam" });
-    try {
-      await generateExamRequest(documentId, difficulty);
-      setDocumentActionMessage("试卷已开始生成，稍后刷新查看。");
-      await loadDocumentExams(documentId);
-    } catch (error) {
-      setDocumentActionMessage(
-        error instanceof Error ? error.message : "试卷生成失败，请稍后重试。",
-      );
-    } finally {
-      setDocumentActionState(null);
-    }
-  }
-
-  async function handleDeleteExam(documentId: string, examId: string) {
-    const confirmed = window.confirm("确定要删除这份试卷吗？相关答题记录和错题也会删除。");
-    if (!confirmed) {
-      return;
-    }
-
-    setDocumentActionMessage("");
-    try {
-      await deleteExamRequest(examId);
-      setDocumentActionMessage("试卷已删除。");
-      await loadDocumentExams(documentId);
-      await loadWrongQuestions();
-    } catch (error) {
-      setDocumentActionMessage(
-        error instanceof Error ? error.message : "试卷删除失败，请稍后重试。",
-      );
-    }
-  }
-
-  async function handleTakeExam(examId: string) {
-    navigate(`/exams/${encodeURIComponent(examId)}/take`);
-  }
-
-  async function handleSubmitExam(answers: Record<string, string>) {
-    if (!currentExam) {
-      return;
-    }
-
-    try {
-      const result = await submitExamAttempt(currentExam.id, answers);
-      setCurrentExamResult(result);
-      navigate(
-        `/exams/${encodeURIComponent(currentExam.id)}/attempts/${encodeURIComponent(
-          result.attempt.id,
-        )}/result`,
-      );
-      await loadWrongQuestions();
-    } catch (error) {
-      setDocumentActionMessage(
-        error instanceof Error ? error.message : "答题提交失败，请稍后重试。",
-      );
-      throw error;
-    }
-  }
-
-  function handleRetryExam() {
-    if (!currentExam) {
-      return;
-    }
-
-    setCurrentExamResult(null);
-    navigate(`/exams/${encodeURIComponent(currentExam.id)}/take`);
-  }
-
-  async function loadWrongQuestions() {
-    setWrongQuestionsLoading(true);
-    try {
-      const data = await listWrongQuestions();
-      setWrongQuestions(data);
-    } catch (error) {
-      setDocumentActionMessage(
-        error instanceof Error ? error.message : "错题本加载失败，请稍后重试。",
-      );
-    } finally {
-      setWrongQuestionsLoading(false);
-    }
-  }
-
-  async function handleReviewWrongQuestion(wrongId: string) {
-    try {
-      await reviewWrongQuestion(wrongId);
-      await loadWrongQuestions();
-    } catch (error) {
-      setDocumentActionMessage(
-        error instanceof Error ? error.message : "标记复习失败，请稍后重试。",
-      );
-    }
-  }
-
-  async function handleDeleteWrongQuestion(wrongId: string) {
-    try {
-      await deleteWrongQuestion(wrongId);
-      await loadWrongQuestions();
-    } catch (error) {
-      setDocumentActionMessage(
-        error instanceof Error ? error.message : "删除错题失败，请稍后重试。",
-      );
-    }
-  }
-
-  async function handleCreatePhaseExam(
-    documentIds: string[],
-    name: string,
-    difficulty: string,
-  ) {
-    try {
-      await generatePhaseExam(documentIds, name, difficulty);
-      await loadPhaseExams();
-      setDocumentActionMessage("阶段考试已开始生成，生成完成后可点击开始考试。");
-      navigate(FILES_ROUTE);
-    } catch (error) {
-      setDocumentActionMessage(
-        error instanceof Error ? error.message : "阶段考试生成失败，请稍后重试。",
-      );
-      throw error;
-    }
-  }
-
-  async function handleDeletePhaseExam(phaseExam: PhaseExamItem) {
-    const confirmed = window.confirm(
-      `确定要删除阶段考试“${phaseExam.name}”吗？关联试卷、答题记录和错题也会一起删除。`,
-    );
-    if (!confirmed) {
-      return;
-    }
-
-    setDocumentActionMessage("");
-    setPhaseExamsLoading(true);
-    try {
-      await deletePhaseExamRequest(phaseExam.id);
-      setDocumentActionMessage("阶段考试已删除。");
-      await loadPhaseExams();
-      await loadWrongQuestions();
-    } catch (error) {
-      setDocumentActionMessage(
-        error instanceof Error ? error.message : "阶段考试删除失败，请稍后重试。",
-      );
-    } finally {
-      setPhaseExamsLoading(false);
     }
   }
 
