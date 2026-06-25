@@ -1,6 +1,6 @@
 """当前页问答消息的数据访问函数。"""
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from config import PAGE_CHAT_HISTORY_LIMIT
@@ -98,7 +98,7 @@ def create_chat_message(page_id: str, role: str, content: str) -> dict[str, obje
         raise ValueError(f"不支持的聊天消息角色：{role}")
 
     message_id = str(uuid4())
-    created_at = datetime.now(UTC).isoformat()
+    created_at = datetime.now(timezone.utc).isoformat()
 
     with get_database_connection() as connection:
         connection.execute(

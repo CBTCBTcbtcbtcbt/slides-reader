@@ -1,4 +1,10 @@
-import type { DocumentItem, DocumentStatusResponse, PageItem } from "../../types/api";
+import type {
+  DocumentItem,
+  DocumentStatusResponse,
+  ExamItem,
+  PageItem,
+  PhaseExamItem,
+} from "../../types/api";
 import type { DocumentActionState, UploadState } from "../../types/ui";
 import { MarkdownContent } from "../MarkdownContent";
 
@@ -21,6 +27,12 @@ type FilesViewProps = {
   expandedLectureNotesDocumentId: string | null;
   pagesByDocument: Record<string, PageItem[]>;
   pagesMessageByDocument: Record<string, string>;
+  examsByDocument: Record<string, ExamItem[]>;
+  examsLoadingByDocument: Record<string, boolean>;
+  phaseExams: PhaseExamItem[];
+  phaseExamsLoading: boolean;
+  onRefreshPhaseExams: () => void;
+  onTakePhaseExam: (phaseExam: PhaseExamItem) => void;
   onReturnToReader: () => void;
   onFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onUploadSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
@@ -38,6 +50,10 @@ type FilesViewProps = {
   onGenerateRemainingLectureNotes: (document: DocumentItem) => void;
   onClearLectureNotesQueue: (document: DocumentItem) => void;
   onRegeneratePageLectureNotes: (document: DocumentItem, page: PageItem) => void;
+  onGenerateExam: (document: DocumentItem) => void;
+  onTakeExam: (examId: string) => void;
+  onDeleteExam: (documentId: string, examId: string) => void;
+  onViewWrongBook: (document: DocumentItem) => void;
   isDocumentBusy: (documentId: string) => boolean;
   isPageLectureNotesBusy: (documentId: string, pageNumber: number) => boolean;
   resolveLectureNotesPaused: (document: DocumentItem) => boolean;
@@ -67,6 +83,12 @@ export function FilesView({
   expandedLectureNotesDocumentId,
   pagesByDocument,
   pagesMessageByDocument,
+  examsByDocument,
+  examsLoadingByDocument,
+  phaseExams,
+  phaseExamsLoading,
+  onRefreshPhaseExams,
+  onTakePhaseExam,
   onReturnToReader,
   onFileChange,
   onUploadSubmit,
@@ -84,6 +106,10 @@ export function FilesView({
   onGenerateRemainingLectureNotes,
   onClearLectureNotesQueue,
   onRegeneratePageLectureNotes,
+  onGenerateExam,
+  onTakeExam,
+  onDeleteExam,
+  onViewWrongBook,
   isDocumentBusy,
   isPageLectureNotesBusy,
   resolveLectureNotesPaused,
@@ -247,6 +273,25 @@ export function FilesView({
                         documentActionState.action === "deleting"
                           ? "删除中..."
                           : "删除"}
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => onGenerateExam(document)}
+                        disabled={
+                          isDocumentBusy(document.document_id) ||
+                          document.course_summary_status !== "ready" ||
+                          !document.course_summary
+                        }
+                      >
+                        生成试卷
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => onViewWrongBook(document)}
+                      >
+                        错题本
                       </button>
                       <button
                         type="button"
@@ -498,6 +543,68 @@ export function FilesView({
                           </div>
                         ) : null}
                       </div>
+
+                      <div className="exam-box">
+                        <div className="exam-box-header">
+                          <span>试卷</span>
+                          <button
+                            type="button"
+                            className="secondary-action-button"
+                            onClick={() => onGenerateExam(document)}
+                            disabled={
+                              isDocumentBusy(document.document_id) ||
+                              document.course_summary_status !== "ready" ||
+                              !document.course_summary
+                            }
+                          >
+                            生成新试卷
+                          </button>
+                        </div>
+                        {examsLoadingByDocument[document.document_id] ? (
+                          <p>正在加载试卷列表...</p>
+                        ) : (examsByDocument[document.document_id] ?? []).length > 0 ? (
+                          <ul className="exam-list">
+                            {(examsByDocument[document.document_id] ?? []).map((exam) => (
+                              <li key={exam.id} className={`exam-item exam-item--${exam.status}`}>
+                                <div className="exam-item-info">
+                                  <strong>{exam.title}</strong>
+                                  <span className="exam-item-status">{exam.status}</span>
+                                  {exam.status === "ready" ? (
+                                    <span className="exam-item-score">{exam.total_score} 分</span>
+                                  ) : null}
+                                  {exam.status === "ready" && exam.latest_attempt_score !== null ? (
+                                    <span className="exam-item-score exam-item-score--attempt">
+                                      最近得分：{exam.latest_attempt_score} / {exam.total_score}
+                                    </span>
+                                  ) : null}
+                                  {exam.error_message ? (
+                                    <p className="document-error">{exam.error_message}</p>
+                                  ) : null}
+                                </div>
+                                <div className="exam-item-actions">
+                                  <button
+                                    type="button"
+                                    className="secondary-action-button"
+                                    onClick={() => onTakeExam(exam.id)}
+                                    disabled={exam.status !== "ready"}
+                                  >
+                                    {exam.status === "ready" ? "开始答题" : "生成中..."}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="danger-button"
+                                    onClick={() => onDeleteExam(document.document_id, exam.id)}
+                                  >
+                                    删除试卷
+                                  </button>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p>暂无试卷，点击“生成试卷”创建。</p>
+                        )}
+                      </div>
                     </>
                   ) : null}
                 </li>
@@ -511,6 +618,60 @@ export function FilesView({
         {documentActionMessage ? (
           <p className="document-action-message">{documentActionMessage}</p>
         ) : null}
+      </section>
+
+      <section className="phase-exams-panel">
+        <div className="phase-exams-panel-header">
+          <div>
+            <h2>阶段考试</h2>
+            <p>阶段考试综合多份课件内容生成，与文档平级管理。</p>
+          </div>
+          <button
+            type="button"
+            className="secondary-action-button"
+            onClick={onRefreshPhaseExams}
+            disabled={phaseExamsLoading}
+          >
+            {phaseExamsLoading ? "刷新中..." : "刷新列表"}
+          </button>
+        </div>
+
+        {phaseExamsLoading && phaseExams.length === 0 ? (
+          <p>正在加载阶段考试列表...</p>
+        ) : phaseExams.length > 0 ? (
+          <ul className="phase-exam-list">
+            {phaseExams.map((phaseExam) => (
+              <li
+                key={phaseExam.id}
+                className={`phase-exam-item phase-exam-item--${phaseExam.status}`}
+              >
+                <div className="phase-exam-item-info">
+                  <strong>{phaseExam.name}</strong>
+                  <span className="phase-exam-item-status">{phaseExam.status}</span>
+                  <span className="phase-exam-item-difficulty">难度：{phaseExam.difficulty}</span>
+                  {phaseExam.status === "ready" && phaseExam.exam_id ? (
+                    <span className="phase-exam-item-ready">已可开始考试</span>
+                  ) : null}
+                  {phaseExam.error_message ? (
+                    <p className="document-error">{phaseExam.error_message}</p>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  className="secondary-action-button"
+                  onClick={() => onTakePhaseExam(phaseExam)}
+                  disabled={phaseExam.status !== "ready" || !phaseExam.exam_id}
+                >
+                  {phaseExam.status === "ready" ? "开始考试" : "生成中..."}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="phase-exams-empty">
+            暂无阶段考试。点击顶部“阶段考试”按钮创建一份综合测试卷。
+          </p>
+        )}
       </section>
     </>
   );

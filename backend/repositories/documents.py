@@ -1,6 +1,7 @@
 """文档表的数据访问函数。"""
 
-from datetime import UTC, datetime
+import json
+from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
 
@@ -198,7 +199,7 @@ def create_document_record(
 ) -> None:
     """创建上传后的文档记录。"""
 
-    created_at = datetime.now(UTC).isoformat()
+    created_at = datetime.now(timezone.utc).isoformat()
 
     with get_database_connection() as connection:
         connection.execute(
@@ -375,6 +376,27 @@ def delete_document_records(document_id: str) -> None:
     """删除某个文档相关的数据库记录。"""
 
     with get_database_connection() as connection:
+        exam_id_rows = connection.execute(
+            "SELECT id FROM exams WHERE document_id = ?",
+            (document_id,),
+        ).fetchall()
+        exam_ids = {row["id"] for row in exam_id_rows}
+
+        phase_exam_rows = connection.execute(
+            "SELECT id, document_ids, exam_id FROM phase_exams"
+        ).fetchall()
+        for phase_exam in phase_exam_rows:
+            try:
+                phase_document_ids = json.loads(phase_exam["document_ids"])
+            except json.JSONDecodeError:
+                phase_document_ids = []
+
+            if document_id in phase_document_ids or phase_exam["exam_id"] in exam_ids:
+                connection.execute(
+                    "DELETE FROM phase_exams WHERE id = ?",
+                    (phase_exam["id"],),
+                )
+
         connection.execute(
             "DELETE FROM lecture_notes_queue WHERE document_id = ?",
             (document_id,),
@@ -412,6 +434,40 @@ def delete_document_records(document_id: str) -> None:
             """,
             (document_id,),
         )
+        connection.execute(
+            """
+            DELETE FROM wrong_questions
+            WHERE exam_id IN (
+                SELECT id
+                FROM exams
+                WHERE document_id = ?
+            )
+            """,
+            (document_id,),
+        )
+        connection.execute(
+            """
+            DELETE FROM exam_attempts
+            WHERE exam_id IN (
+                SELECT id
+                FROM exams
+                WHERE document_id = ?
+            )
+            """,
+            (document_id,),
+        )
+        connection.execute(
+            """
+            DELETE FROM exam_questions
+            WHERE exam_id IN (
+                SELECT id
+                FROM exams
+                WHERE document_id = ?
+            )
+            """,
+            (document_id,),
+        )
+        connection.execute("DELETE FROM exams WHERE document_id = ?", (document_id,))
         connection.execute("DELETE FROM pages WHERE document_id = ?", (document_id,))
         connection.execute("DELETE FROM documents WHERE id = ?", (document_id,))
         connection.commit()

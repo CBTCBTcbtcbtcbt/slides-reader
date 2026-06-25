@@ -1,7 +1,7 @@
 """当前页问答图片附件的数据访问和文件保存函数。"""
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -158,7 +158,7 @@ def save_chat_attachments(
         return []
 
     CHAT_ATTACHMENT_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
-    created_at = datetime.now(UTC).isoformat()
+    created_at = datetime.now(timezone.utc).isoformat()
     attachment_rows: list[dict[str, str | int]] = []
 
     with get_database_connection() as connection:

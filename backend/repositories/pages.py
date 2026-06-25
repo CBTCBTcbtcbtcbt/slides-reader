@@ -1,6 +1,6 @@
 """页面表的数据访问函数。"""
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -70,7 +70,7 @@ def create_page_record(
     """创建或替换单页解析记录。"""
 
     page_id = str(uuid4())
-    created_at = datetime.now(UTC).isoformat()
+    created_at = datetime.now(timezone.utc).isoformat()
 
     with get_database_connection() as connection:
         connection.execute(
@@ -448,17 +448,21 @@ def get_page_for_lecture_notes_by_id(page_id: str):
     return page
 
 
-def list_page_image_paths_for_document(document_id: str) -> list[str]:
-    """读取某个文档所有页面截图路径。"""
+def list_page_image_paths_for_document(document_id: str) -> list[dict[str, str | int]]:
+    """读取某个文档所有页面截图路径和页码。"""
 
     with get_database_connection() as connection:
         rows = connection.execute(
             """
-            SELECT image_path
+            SELECT page_number, image_path
             FROM pages
             WHERE document_id = ? AND image_path IS NOT NULL
             """,
             (document_id,),
         ).fetchall()
 
-    return [row["image_path"] for row in rows if row["image_path"]]
+    return [
+        {"page_number": row["page_number"], "image_path": row["image_path"]}
+        for row in rows
+        if row["image_path"]
+    ]

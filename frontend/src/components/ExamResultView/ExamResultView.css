@@ -1,0 +1,160 @@
+.exam-result-view {
+  min-height: 100vh;
+  background: #f8f9fa;
+}
+
+.exam-result-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 24px;
+  background: #fff;
+  border-bottom: 1px solid #e8eaed;
+}
+
+.exam-result-header h2 {
+  margin: 0;
+  flex: 1;
+  font-size: 20px;
+  color: #1a1a2e;
+}
+
+.retry-button {
+  padding: 8px 16px;
+  background: #4a90d9;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.retry-button:hover {
+  background: #3a7bc8;
+}
+
+.exam-result-main {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.score-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 32px;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  margin-bottom: 24px;
+}
+
+.score-value {
+  font-size: 56px;
+  font-weight: 700;
+  color: #4a90d9;
+  line-height: 1;
+}
+
+.score-max {
+  font-size: 20px;
+  color: #888;
+  margin-bottom: 8px;
+}
+
+.score-percentage {
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+}
+
+.result-details {
+  background: #fff;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.result-details h3 {
+  margin: 0 0 16px;
+  font-size: 16px;
+  color: #333;
+}
+
+.result-question {
+  padding: 18px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.result-question:last-child {
+  border-bottom: none;
+}
+
+.result-question-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.result-question-number {
+  font-weight: 700;
+  color: #4a90d9;
+}
+
+.result-question-status {
+  font-size: 13px;
+  padding: 3px 10px;
+  border-radius: 12px;
+}
+
+.result-correct .result-question-status {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.result-wrong .result-question-status {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.result-question-score {
+  font-size: 13px;
+  color: #888;
+}
+
+.result-question-content {
+  margin: 0 0 12px;
+  font-size: 15px;
+  color: #333;
+  line-height: 1.5;
+}
+
+.result-answer-row {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.result-source-page {
+  font-size: 13px;
+  color: #888;
+  margin: 0 0 10px;
+}
+
+.result-explanation {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 14px;
+  color: #555;
+  line-height: 1.6;
+}
+
+.result-explanation strong {
+  color: #333;
+}
+
+.result-explanation p {
+  margin: 6px 0 0;
+}

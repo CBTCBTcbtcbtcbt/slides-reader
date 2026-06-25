@@ -77,6 +77,15 @@ def update_llm_config(request: LLMConfigUpdateRequest) -> dict[str, str | int | 
             )
         next_settings["page_chat_prompt"] = page_chat_prompt
 
+    if request.exam_generation_prompt is not None:
+        exam_generation_prompt = request.exam_generation_prompt.strip()
+        if not exam_generation_prompt:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="试卷生成 prompt 不能为空。",
+            )
+        next_settings["exam_generation_prompt"] = exam_generation_prompt
+
     write_app_settings(next_settings)
     return serialize_llm_config(get_llm_config())
 

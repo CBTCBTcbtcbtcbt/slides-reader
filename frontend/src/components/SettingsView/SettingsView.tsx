@@ -13,15 +13,18 @@ type SettingsViewProps = {
   courseSummaryPrompt: string;
   lectureNotesPrompt: string;
   pageChatPrompt: string;
+  examGenerationPrompt: string;
   isCourseSummaryPromptExpanded: boolean;
   isLectureNotesPromptExpanded: boolean;
   isPageChatPromptExpanded: boolean;
+  isExamGenerationPromptExpanded: boolean;
   llmTestPrompt: string;
   llmConfigMessage: string;
   llmTestAnswer: string;
   courseSummaryPromptTextareaRef: React.RefObject<HTMLTextAreaElement | null>;
   lectureNotesPromptTextareaRef: React.RefObject<HTMLTextAreaElement | null>;
   pageChatPromptTextareaRef: React.RefObject<HTMLTextAreaElement | null>;
+  examGenerationPromptTextareaRef: React.RefObject<HTMLTextAreaElement | null>;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
   onBaseUrlChange: (value: string) => void;
   onApiKeyChange: (value: string) => void;
@@ -31,9 +34,11 @@ type SettingsViewProps = {
   onCourseSummaryPromptChange: (value: string) => void;
   onLectureNotesPromptChange: (value: string) => void;
   onPageChatPromptChange: (value: string) => void;
+  onExamGenerationPromptChange: (value: string) => void;
   onToggleCourseSummaryPrompt: () => void;
   onToggleLectureNotesPrompt: () => void;
   onTogglePageChatPrompt: () => void;
+  onToggleExamGenerationPrompt: () => void;
   onTestPromptChange: (value: string) => void;
   onTestLlmConfig: () => void;
 };
@@ -50,15 +55,18 @@ export function SettingsView({
   courseSummaryPrompt,
   lectureNotesPrompt,
   pageChatPrompt,
+  examGenerationPrompt,
   isCourseSummaryPromptExpanded,
   isLectureNotesPromptExpanded,
   isPageChatPromptExpanded,
+  isExamGenerationPromptExpanded,
   llmTestPrompt,
   llmConfigMessage,
   llmTestAnswer,
   courseSummaryPromptTextareaRef,
   lectureNotesPromptTextareaRef,
   pageChatPromptTextareaRef,
+  examGenerationPromptTextareaRef,
   onSubmit,
   onBaseUrlChange,
   onApiKeyChange,
@@ -68,9 +76,11 @@ export function SettingsView({
   onCourseSummaryPromptChange,
   onLectureNotesPromptChange,
   onPageChatPromptChange,
+  onExamGenerationPromptChange,
   onToggleCourseSummaryPrompt,
   onToggleLectureNotesPrompt,
   onTogglePageChatPrompt,
+  onToggleExamGenerationPrompt,
   onTestPromptChange,
   onTestLlmConfig,
 }: SettingsViewProps) {
@@ -82,7 +92,7 @@ export function SettingsView({
         <h2>LLM 配置</h2>
         <p>
           LLM 是 Large Language Model，也就是“大语言模型”。这里配置
-          OpenAI-compatible API，用于后续生成课程简介、逐页讲稿和回答问题。
+          OpenAI-compatible API，用于后续生成课程简介、逐页讲稿、回答问题和生成试卷。
         </p>
       </div>
 
@@ -195,6 +205,26 @@ export function SettingsView({
               className="prompt-textarea"
               value={pageChatPrompt}
               onChange={(event) => onPageChatPromptChange(event.target.value)}
+              disabled={isBusy}
+            />
+          </label>
+        ) : null}
+      </div>
+
+      <div className="prompt-setting">
+        <div className="prompt-setting-header">
+          <span>试卷生成 prompt</span>
+          <button type="button" className="prompt-toggle-button" onClick={onToggleExamGenerationPrompt} disabled={isBusy}>
+            {isExamGenerationPromptExpanded ? "折叠" : "展开"}
+          </button>
+        </div>
+        {isExamGenerationPromptExpanded ? (
+          <label className="config-field">
+            <textarea
+              ref={examGenerationPromptTextareaRef}
+              className="prompt-textarea"
+              value={examGenerationPrompt}
+              onChange={(event) => onExamGenerationPromptChange(event.target.value)}
               disabled={isBusy}
             />
           </label>

@@ -1,9 +1,11 @@
 """文档、页面文件和讲稿生成控制路由。"""
 
+import logging
+import threading
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Response, UploadFile, status
 from fastapi.responses import FileResponse
 
 import generation_service
@@ -57,6 +59,32 @@ from schemas import RenameDocumentRequest
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+def _start_lecture_notes_generation(document_id: str) -> None:
+    """启动指定文档的逐页讲稿后台消费者。"""
+
+    threading.Thread(
+        target=generation_service.generate_document_lecture_notes,
+        args=(document_id,),
+        daemon=True,
+    ).start()
+
+
+def _delete_file_best_effort(file_path, label: str, cleanup_errors: list[str]) -> None:
+    """尽量删除本地文件；失败时记录日志但不让已删除的数据库记录回滚到前端。"""
+
+    if not file_path.exists():
+        return
+
+    try:
+        file_path.unlink()
+    except OSError as error:
+        message = f"{label}删除失败：{file_path}：{error}"
+        cleanup_errors.append(message)
+        logger.warning(message, exc_info=True)
+
 
 
 @router.get("/api/documents")
@@ -79,7 +107,7 @@ def read_document_file(document_id: str) -> FileResponse:
             detail="没有找到对应的文档。",
         )
 
-    document_file_path = resolve_document_file_path(document["file_path"])
+    document_file_path = resolve_document_file_path(document["file_path"], document_id=document_id)
     ensure_document_file_is_safe(document_file_path)
 
     if not document_file_path.exists() or not document_file_path.is_file():
@@ -199,7 +227,11 @@ def read_page_image(document_id: str, page_number: int) -> FileResponse:
             detail="当前页面没有截图。",
         )
 
-    image_path = resolve_page_image_path(page["image_path"])
+    image_path = resolve_page_image_path(
+        page["image_path"],
+        document_id=document_id,
+        page_number=page_number,
+    )
     ensure_page_image_file_is_safe(image_path)
 
     if not image_path.exists() or not image_path.is_file():
@@ -212,10 +244,7 @@ def read_page_image(document_id: str, page_number: int) -> FileResponse:
 
 
 @router.post("/api/documents/{document_id}/course-summary/regenerate")
-def regenerate_course_summary(
-    document_id: str,
-    background_tasks: BackgroundTasks,
-) -> dict[str, str]:
+def regenerate_course_summary(document_id: str) -> dict[str, str]:
     """重新生成指定文档的课程简介。"""
 
     init_database()
@@ -237,16 +266,17 @@ def regenerate_course_summary(
         course_summary=None,
         error_message=None,
     )
-    background_tasks.add_task(generation_service.generate_course_summary, document_id)
+    threading.Thread(
+        target=generation_service.generate_course_summary,
+        args=(document_id,),
+        daemon=True,
+    ).start()
 
     return {"status": "processing", "document_id": document_id}
 
 
 @router.post("/api/documents/{document_id}/lecture-notes/regenerate")
-def regenerate_document_lecture_notes(
-    document_id: str,
-    background_tasks: BackgroundTasks,
-) -> dict[str, str]:
+def regenerate_document_lecture_notes(document_id: str) -> dict[str, str]:
     """把指定文档所有页面加入逐页讲稿待生成队列。"""
 
     init_database()
@@ -254,7 +284,7 @@ def regenerate_document_lecture_notes(
     pages = list_all_pages_for_lecture_notes_queue(document_id)
     enqueue_pages_for_lecture_notes(pages)
     set_lecture_notes_paused(document_id=document_id, paused=False)
-    background_tasks.add_task(generation_service.generate_document_lecture_notes, document["id"])
+    _start_lecture_notes_generation(document["id"])
 
     return {"status": "queued", "document_id": document_id}
 
@@ -279,16 +309,13 @@ def pause_document_lecture_notes(document_id: str) -> dict[str, str | bool]:
 
 
 @router.post("/api/documents/{document_id}/lecture-notes/resume")
-def resume_document_lecture_notes(
-    document_id: str,
-    background_tasks: BackgroundTasks,
-) -> dict[str, str | bool]:
+def resume_document_lecture_notes(document_id: str) -> dict[str, str | bool]:
     """继续消费指定文档已有的逐页讲稿队列，不额外补充新页面。"""
 
     init_database()
     document = get_document_ready_for_lecture_notes(document_id)
     set_lecture_notes_paused(document_id=document_id, paused=False)
-    background_tasks.add_task(generation_service.generate_document_lecture_notes, document["id"])
+    _start_lecture_notes_generation(document["id"])
 
     return {
         "status": "resumed",
@@ -298,18 +325,21 @@ def resume_document_lecture_notes(
 
 
 @router.post("/api/documents/{document_id}/lecture-notes/remaining")
-def enqueue_remaining_document_lecture_notes(document_id: str) -> dict[str, str | int]:
-    """把没有讲稿且尚未排队的页面加入逐页讲稿队列，不改变暂停状态。"""
+def enqueue_remaining_document_lecture_notes(document_id: str) -> dict[str, str | int | bool]:
+    """把没有讲稿的页面加入队列，并立即启动逐页讲稿生成。"""
 
     init_database()
-    get_document_ready_for_lecture_notes(document_id)
+    document = get_document_ready_for_lecture_notes(document_id)
     pages = list_pages_without_lecture_notes_for_queue(document_id)
     queued_count = enqueue_pages_for_lecture_notes(pages)
+    set_lecture_notes_paused(document_id=document_id, paused=False)
+    _start_lecture_notes_generation(document["id"])
 
     return {
         "status": "queued",
         "document_id": document_id,
         "queued_count": queued_count,
+        "started": True,
     }
 
 
@@ -336,7 +366,6 @@ def clear_document_lecture_notes_queue(document_id: str) -> dict[str, str | int]
 def regenerate_page_lecture_notes(
     document_id: str,
     page_number: int,
-    background_tasks: BackgroundTasks,
 ) -> dict[str, str | int]:
     """把指定页面加入逐页讲稿待生成队列。"""
 
@@ -344,7 +373,8 @@ def regenerate_page_lecture_notes(
     document = get_document_ready_for_lecture_notes(document_id)
     page = get_page_for_lecture_notes(document_id=document_id, page_number=page_number)
     enqueue_pages_for_lecture_notes([page])
-    background_tasks.add_task(generation_service.generate_document_lecture_notes, document["id"])
+    set_lecture_notes_paused(document_id=document_id, paused=False)
+    _start_lecture_notes_generation(document["id"])
 
     return {
         "status": "queued",
@@ -354,17 +384,15 @@ def regenerate_page_lecture_notes(
 
 
 @router.post("/api/pages/{page_id}/regenerate")
-def regenerate_page_lecture_notes_by_id(
-    page_id: str,
-    background_tasks: BackgroundTasks,
-) -> dict[str, str | int]:
+def regenerate_page_lecture_notes_by_id(page_id: str) -> dict[str, str | int]:
     """通过 page_id 把指定页面加入逐页讲稿待生成队列。"""
 
     init_database()
     page = get_page_for_lecture_notes_by_id(page_id)
     document = get_document_ready_for_lecture_notes(page["document_id"])
     enqueue_pages_for_lecture_notes([page])
-    background_tasks.add_task(generation_service.generate_document_lecture_notes, document["id"])
+    set_lecture_notes_paused(document_id=page["document_id"], paused=False)
+    _start_lecture_notes_generation(document["id"])
 
     return {
         "status": "queued",
@@ -404,12 +432,16 @@ def delete_document(document_id: str) -> Response:
             detail="没有找到对应的文档。",
         )
 
-    document_file_path = resolve_document_file_path(document["file_path"])
+    document_file_path = resolve_document_file_path(document["file_path"], document_id=document_id)
     ensure_document_file_is_safe(document_file_path)
 
     page_image_paths = [
-        resolve_page_image_path(image_path)
-        for image_path in list_page_image_paths_for_document(document_id)
+        resolve_page_image_path(
+            image_row["image_path"],
+            document_id=document_id,
+            page_number=int(image_row["page_number"]),
+        )
+        for image_row in list_page_image_paths_for_document(document_id)
     ]
     for page_image_path in page_image_paths:
         ensure_page_image_file_is_safe(page_image_path)
@@ -421,36 +453,19 @@ def delete_document(document_id: str) -> Response:
     for chat_attachment_path in chat_attachment_paths:
         ensure_chat_attachment_file_is_safe(chat_attachment_path)
 
+    # 删除时先暂停后续讲稿消费，避免后台队列继续处理已经被删除的文档。
+    set_lecture_notes_paused(document_id=document_id, paused=True)
     delete_document_records(document_id)
 
-    if document_file_path.exists():
-        try:
-            document_file_path.unlink()
-        except OSError as error:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"数据库记录已删除，但本地 PDF 文件删除失败：{error}",
-            ) from error
-
+    cleanup_errors: list[str] = []
+    _delete_file_best_effort(document_file_path, "PDF 文件", cleanup_errors)
     for page_image_path in page_image_paths:
-        if page_image_path.exists():
-            try:
-                page_image_path.unlink()
-            except OSError as error:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"数据库记录已删除，但页面截图删除失败：{error}",
-                ) from error
-
+        _delete_file_best_effort(page_image_path, "页面截图", cleanup_errors)
     for chat_attachment_path in chat_attachment_paths:
-        if chat_attachment_path.exists():
-            try:
-                chat_attachment_path.unlink()
-            except OSError as error:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"数据库记录已删除，但聊天附件删除失败：{error}",
-                ) from error
+        _delete_file_best_effort(chat_attachment_path, "聊天附件", cleanup_errors)
+
+    if cleanup_errors:
+        logger.warning("文档 %s 数据库记录已删除，但部分本地文件清理失败：%s", document_id, "; ".join(cleanup_errors))
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

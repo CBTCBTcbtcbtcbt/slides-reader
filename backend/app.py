@@ -1,10 +1,21 @@
 """FastAPI 应用创建和路由挂载入口。"""
 
-from fastapi import FastAPI
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import init_database
-from routes import documents, health, llm, pages
+from routes import documents, exams, health, llm, pages, phase_exams, wrong_questions
+
+
+BACKEND_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = BACKEND_DIR.parent
+FRONTEND_DIST_DIR = PROJECT_DIR / "frontend" / "dist"
+FRONTEND_INDEX_PATH = FRONTEND_DIST_DIR / "index.html"
+FRONTEND_ASSETS_DIR = FRONTEND_DIST_DIR / "assets"
 
 
 def create_app() -> FastAPI:
@@ -38,6 +49,34 @@ def create_app() -> FastAPI:
     application.include_router(documents.router)
     application.include_router(pages.router)
     application.include_router(llm.router)
+    application.include_router(exams.router)
+    application.include_router(wrong_questions.router)
+    application.include_router(phase_exams.router)
+
+    if FRONTEND_ASSETS_DIR.exists():
+        application.mount(
+            "/assets",
+            StaticFiles(directory=FRONTEND_ASSETS_DIR),
+            name="frontend-assets",
+        )
+
+    @application.get("/{full_path:path}", include_in_schema=False)
+    def serve_frontend(full_path: str) -> FileResponse:
+        """返回前端单页应用入口。
+
+        API 路由已经在上面注册；未命中的非 API 路径交给 React Router。
+        这样生产/展示时只需要启动 FastAPI 一个端口。
+        """
+
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not Found")
+
+        if not FRONTEND_INDEX_PATH.exists():
+            raise RuntimeError(
+                "frontend/dist/index.html 不存在。请先在 frontend 目录运行 npm run build。"
+            )
+
+        return FileResponse(FRONTEND_INDEX_PATH)
 
     @application.on_event("startup")
     def startup() -> None:

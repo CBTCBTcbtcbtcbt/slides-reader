@@ -52,10 +52,20 @@ def is_supported_slides_upload(file: UploadFile) -> bool:
     return get_upload_file_extension(file) in {".pdf", ".ppt", ".pptx"}
 
 
-def resolve_document_file_path(file_path: str) -> Path:
-    """把数据库中的文件路径解析为本地 PDF 绝对路径。"""
+def resolve_document_file_path(file_path: str, document_id: str | None = None) -> Path:
+    """把数据库中的文件路径解析为本地 PDF 绝对路径。
 
-    return Path(file_path).resolve()
+    旧数据库可能保存了另一个工程目录下的绝对路径。只要文件名仍是当前文档 ID，
+    就回落到当前项目的 storage/documents，避免项目迁移后文档变成删不掉的僵尸记录。
+    """
+
+    resolved_path = Path(file_path).resolve()
+    if document_id and resolved_path.name == f"{document_id}.pdf":
+        fallback_path = DOCUMENT_STORAGE_DIR / resolved_path.name
+        if fallback_path.exists() or not resolved_path.exists():
+            return fallback_path.resolve()
+
+    return resolved_path
 
 
 def ensure_document_file_is_safe(file_path: Path) -> None:
@@ -71,10 +81,25 @@ def ensure_document_file_is_safe(file_path: Path) -> None:
         ) from error
 
 
-def resolve_page_image_path(image_path: str) -> Path:
-    """把数据库中的截图路径解析为本地 PNG 绝对路径。"""
+def resolve_page_image_path(
+    image_path: str,
+    document_id: str | None = None,
+    page_number: int | None = None,
+) -> Path:
+    """把数据库中的截图路径解析为本地 PNG 绝对路径。
 
-    return Path(image_path).resolve()
+    对迁移后的旧绝对路径做同样回落：只接受符合当前文档和页码命名规则的截图。
+    """
+
+    resolved_path = Path(image_path).resolve()
+    if document_id is not None and page_number is not None:
+        expected_name = f"{document_id}-page-{page_number}.png"
+        if resolved_path.name == expected_name:
+            fallback_path = PAGE_IMAGE_STORAGE_DIR / expected_name
+            if fallback_path.exists() or not resolved_path.exists():
+                return fallback_path.resolve()
+
+    return resolved_path
 
 
 def ensure_page_image_file_is_safe(image_path: Path) -> None:

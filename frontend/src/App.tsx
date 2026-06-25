@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
   Navigate,
   useLocation,
@@ -28,12 +28,30 @@ import {
   saveLlmConfig as saveLlmConfigRequest,
   testLlmConfig as testLlmConfigRequest,
 } from "./api/llm";
+import {
+  deleteExam as deleteExamRequest,
+  generateExam as generateExamRequest,
+  listDocumentExams,
+  readExamAttemptResult,
+  readExamMetadata,
+  readExamQuestions,
+  submitExamAttempt,
+} from "./api/exams";
+import { generatePhaseExam, listPhaseExams } from "./api/phaseExams";
+import {
+  deleteWrongQuestion,
+  listWrongQuestions,
+  reviewWrongQuestion,
+} from "./api/wrongQuestions";
+import { ExamResultView } from "./components/ExamResultView/ExamResultView";
+import { ExamTakeView } from "./components/ExamTakeView/ExamTakeView";
 import { FilesView } from "./components/FilesView/FilesView";
 import { MarkdownContent } from "./components/MarkdownContent";
 import { NoteBlock } from "./components/NoteBlock/NoteBlock";
 import { PageChatContent, PageChatStatus } from "./components/PageChat/PageChat";
-import { ReaderView } from "./components/ReaderView/ReaderView";
+import { PhaseExamCreateView } from "./components/PhaseExamCreateView/PhaseExamCreateView";
 import { SettingsView } from "./components/SettingsView/SettingsView";
+import { WrongBookView } from "./components/WrongBookView/WrongBookView";
 import { useDocumentPolling } from "./hooks/useDocumentPolling";
 import { useNoteBlockInteraction } from "./hooks/useNoteBlockInteraction";
 import { usePdfSizing } from "./hooks/usePdfSizing";
@@ -41,10 +59,19 @@ import type {
   ChatMessageItem,
   DocumentItem,
   DocumentStatusResponse,
+  ExamAttemptResult,
+  ExamItem,
+  ExamQuestionForTaking,
   LLMConfigResponse,
   LLMConfigUpdatePayload,
   PageItem,
+  PhaseExamItem,
+  WrongQuestionItem,
 } from "./types/api";
+const ReaderView = lazy(() =>
+  import("./components/ReaderView/ReaderView").then((module) => ({ default: module.ReaderView })),
+);
+
 import type {
   DocumentActionState,
   HealthState,
@@ -71,6 +98,10 @@ const PAGE_CHAT_MAX_ATTACHMENTS = 4;
 const FILES_ROUTE = "/";
 const SETTINGS_ROUTE = "/settings";
 const READER_ROUTE_TEMPLATE = "/documents/:documentId/read";
+const EXAM_TAKE_ROUTE_TEMPLATE = "/exams/:examId/take";
+const EXAM_RESULT_ROUTE_TEMPLATE = "/exams/:examId/attempts/:attemptId/result";
+const WRONG_BOOK_ROUTE = "/wrong-book";
+const PHASE_EXAM_CREATE_ROUTE = "/phase-exams/create";
 
 function buildReaderPath(documentId: string, pageNumber: number) {
   // 文档 ID 放进 URL path 前需要编码，避免特殊字符破坏路由结构。
@@ -109,9 +140,28 @@ function App() {
   const routeDocumentId = readerRouteMatch?.params.documentId
     ? decodeRouteSegment(readerRouteMatch.params.documentId)
     : null;
+  const examTakeRouteMatch = useMatch(EXAM_TAKE_ROUTE_TEMPLATE);
+  const examResultRouteMatch = useMatch(EXAM_RESULT_ROUTE_TEMPLATE);
+  const wrongBookRouteMatch = useMatch(WRONG_BOOK_ROUTE);
+  const phaseExamCreateRouteMatch = useMatch(PHASE_EXAM_CREATE_ROUTE);
+  const routeExamId =
+    examTakeRouteMatch?.params.examId ?? examResultRouteMatch?.params.examId ?? null;
+  const routeAttemptId = examResultRouteMatch?.params.attemptId ?? null;
+
   const isReaderRoute = routeDocumentId !== null;
+  const isExamTakeRoute = examTakeRouteMatch !== null;
+  const isExamResultRoute = examResultRouteMatch !== null;
+  const isWrongBookRoute = wrongBookRouteMatch !== null;
+  const isPhaseExamCreateRoute = phaseExamCreateRouteMatch !== null;
   const isSettingsRoute = location.pathname === SETTINGS_ROUTE;
-  const isKnownRoute = location.pathname === FILES_ROUTE || isSettingsRoute || isReaderRoute;
+  const isKnownRoute =
+    location.pathname === FILES_ROUTE ||
+    isSettingsRoute ||
+    isReaderRoute ||
+    isExamTakeRoute ||
+    isExamResultRoute ||
+    isWrongBookRoute ||
+    isPhaseExamCreateRoute;
   const visibleView = isSettingsRoute ? "settings" : "files";
   const requestedPdfPage = parsePositiveInteger(searchParams.get("page")) ?? 1;
 
@@ -168,15 +218,33 @@ function App() {
   const [courseSummaryPrompt, setCourseSummaryPrompt] = useState("");
   const [lectureNotesPrompt, setLectureNotesPrompt] = useState("");
   const [pageChatPrompt, setPageChatPrompt] = useState("");
+  const [examGenerationPrompt, setExamGenerationPrompt] = useState("");
   const [isCourseSummaryPromptExpanded, setIsCourseSummaryPromptExpanded] = useState(false);
   const [isLectureNotesPromptExpanded, setIsLectureNotesPromptExpanded] = useState(false);
   const [isPageChatPromptExpanded, setIsPageChatPromptExpanded] = useState(false);
+  const [isExamGenerationPromptExpanded, setIsExamGenerationPromptExpanded] = useState(false);
   const [llmConfigMessage, setLlmConfigMessage] = useState("正在加载 LLM 配置...");
   const [llmTestPrompt, setLlmTestPrompt] = useState("请用一句中文回复：LLM 配置测试成功。");
   const [llmTestAnswer, setLlmTestAnswer] = useState("");
   const courseSummaryPromptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const lectureNotesPromptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const pageChatPromptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const examGenerationPromptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // 试卷、错题本、阶段考试相关状态。
+  const [examsByDocument, setExamsByDocument] = useState<Record<string, ExamItem[]>>({});
+  const [examsLoadingByDocument, setExamsLoadingByDocument] = useState<Record<string, boolean>>({});
+  const [currentExam, setCurrentExam] = useState<ExamItem | null>(null);
+  const [currentExamQuestionsWithoutAnswer, setCurrentExamQuestionsWithoutAnswer] = useState<
+    ExamQuestionForTaking[]
+  >([]);
+  const [currentExamResult, setCurrentExamResult] = useState<ExamAttemptResult | null>(null);
+  const [examTakeLoading, setExamTakeLoading] = useState(false);
+  const [wrongQuestions, setWrongQuestions] = useState<WrongQuestionItem[]>([]);
+  const [wrongQuestionsLoading, setWrongQuestionsLoading] = useState(false);
+  const [phaseExamCreating, setPhaseExamCreating] = useState(false);
+  const [phaseExams, setPhaseExams] = useState<PhaseExamItem[]>([]);
+  const [phaseExamsLoading, setPhaseExamsLoading] = useState(false);
 
   // 页面讲稿、文档展开状态和当前页问答都按 document_id 或 page_id 保存，方便阅读器和文件页复用。
   const [expandedLectureNotesDocumentId, setExpandedLectureNotesDocumentId] = useState<
@@ -400,6 +468,39 @@ function App() {
   }, [courseSummaryPrompt, isCourseSummaryPromptExpanded]);
 
   useEffect(() => {
+    // 文件页可见且文档列表加载完成后，自动加载每份文档的试卷列表和阶段考试列表。
+    if (visibleView !== "files" || !hasLoadedDocuments) {
+      return;
+    }
+
+    documents.forEach((document) => {
+      void loadDocumentExams(document.document_id);
+    });
+    void loadPhaseExams();
+  }, [visibleView, hasLoadedDocuments, documents]);
+
+  useEffect(() => {
+    // 进入错题本页面时自动加载错题数据。
+    if (isWrongBookRoute) {
+      void loadWrongQuestions();
+    }
+  }, [isWrongBookRoute]);
+
+  useEffect(() => {
+    // 直接访问或刷新答题页时，根据 URL 中的 examId 重新加载无答案题目。
+    if (isExamTakeRoute && routeExamId) {
+      void loadExamForTaking(routeExamId);
+    }
+  }, [isExamTakeRoute, routeExamId]);
+
+  useEffect(() => {
+    // 直接访问或刷新结果页时，根据 URL 中的 examId 和 attemptId 重新加载判分结果。
+    if (isExamResultRoute && routeExamId && routeAttemptId) {
+      void loadExamAttemptResult(routeExamId, routeAttemptId);
+    }
+  }, [isExamResultRoute, routeExamId, routeAttemptId]);
+
+  useEffect(() => {
     if (!isLectureNotesPromptExpanded) {
       return;
     }
@@ -414,6 +515,14 @@ function App() {
 
     resizePromptTextarea(pageChatPromptTextareaRef.current);
   }, [pageChatPrompt, isPageChatPromptExpanded]);
+
+  useEffect(() => {
+    if (!isExamGenerationPromptExpanded) {
+      return;
+    }
+
+    resizePromptTextarea(examGenerationPromptTextareaRef.current);
+  }, [examGenerationPrompt, isExamGenerationPromptExpanded]);
 
   function resizePromptTextarea(textarea: HTMLTextAreaElement | null) {
     if (textarea === null) {
@@ -432,6 +541,7 @@ function App() {
     setCourseSummaryPrompt(data.course_summary_prompt);
     setLectureNotesPrompt(data.lecture_notes_prompt);
     setPageChatPrompt(data.page_chat_prompt);
+    setExamGenerationPrompt(data.exam_generation_prompt);
     setLlmApiKey("");
     setShouldClearLlmApiKey(false);
     setLlmApiKeyConfigured(data.api_key_configured);
@@ -469,6 +579,7 @@ function App() {
     const nextCourseSummaryPrompt = courseSummaryPrompt.trim();
     const nextLectureNotesPrompt = lectureNotesPrompt.trim();
     const nextPageChatPrompt = pageChatPrompt.trim();
+    const nextExamGenerationPrompt = examGenerationPrompt.trim();
 
     if (!nextBaseUrl) {
       setLlmConfigState("error");
@@ -506,6 +617,12 @@ function App() {
       return;
     }
 
+    if (!nextExamGenerationPrompt) {
+      setLlmConfigState("error");
+      setLlmConfigMessage("试卷生成 prompt 不能为空。");
+      return;
+    }
+
     const payload: LLMConfigUpdatePayload = {
       base_url: nextBaseUrl,
       model: nextModel,
@@ -513,6 +630,7 @@ function App() {
       course_summary_prompt: nextCourseSummaryPrompt,
       lecture_notes_prompt: nextLectureNotesPrompt,
       page_chat_prompt: nextPageChatPrompt,
+      exam_generation_prompt: nextExamGenerationPrompt,
     };
 
     // 不填写新密钥时不发送 api_key 字段，后端会保留旧密钥；勾选清空时发送空字符串。
@@ -605,48 +723,107 @@ function App() {
 
   function mergeDocumentStatus(statusData: DocumentStatusResponse) {
     // 状态接口比文档列表更及时；轮询时用它覆盖列表中的状态字段。
-    setDocumentStatusById((currentStatus) => ({
-      ...currentStatus,
-      [statusData.document_id]: statusData,
-    }));
-    setDocuments((currentDocuments) =>
-      currentDocuments.map((document) =>
-        document.document_id === statusData.document_id
-          ? {
-              ...document,
-              status: statusData.status,
-              error_message: statusData.error_message,
-              page_count: statusData.total_pages,
-              course_summary_status: statusData.course_summary_status,
-              course_summary_error: statusData.course_summary_error,
-              lecture_notes_paused: statusData.lecture_notes_paused,
-            }
-          : document,
-      ),
-    );
+    setDocumentStatusById((currentStatus) => {
+      const previousStatus = currentStatus[statusData.document_id];
+      // 如果 should_poll 等核心字段没有变化，复用旧对象避免触发不必要的重渲染。
+      if (
+        previousStatus &&
+        previousStatus.status === statusData.status &&
+        previousStatus.course_summary_status === statusData.course_summary_status &&
+        previousStatus.lecture_notes_ready_count === statusData.lecture_notes_ready_count &&
+        previousStatus.lecture_notes_failed_count === statusData.lecture_notes_failed_count &&
+        previousStatus.lecture_notes_processing_count === statusData.lecture_notes_processing_count &&
+        previousStatus.lecture_notes_pending_count === statusData.lecture_notes_pending_count &&
+        previousStatus.lecture_notes_paused === statusData.lecture_notes_paused &&
+        previousStatus.should_poll === statusData.should_poll &&
+        previousStatus.error_message === statusData.error_message &&
+        previousStatus.course_summary_error === statusData.course_summary_error
+      ) {
+        return currentStatus;
+      }
+
+      return {
+        ...currentStatus,
+        [statusData.document_id]: statusData,
+      };
+    });
+    setDocuments((currentDocuments) => {
+      const documentIndex = currentDocuments.findIndex(
+        (document) => document.document_id === statusData.document_id,
+      );
+      if (documentIndex === -1) {
+        return currentDocuments;
+      }
+
+      const document = currentDocuments[documentIndex];
+      const nextDocument = {
+        ...document,
+        status: statusData.status,
+        error_message: statusData.error_message,
+        page_count: statusData.total_pages,
+        course_summary_status: statusData.course_summary_status,
+        course_summary_error: statusData.course_summary_error,
+        lecture_notes_paused: statusData.lecture_notes_paused,
+      };
+
+      // 只有真正发生变化时才创建新数组，避免轮询稳定后仍反复重渲染阅读器。
+      if (
+        document.status === nextDocument.status &&
+        document.error_message === nextDocument.error_message &&
+        document.page_count === nextDocument.page_count &&
+        document.course_summary_status === nextDocument.course_summary_status &&
+        document.course_summary_error === nextDocument.course_summary_error &&
+        document.lecture_notes_paused === nextDocument.lecture_notes_paused
+      ) {
+        return currentDocuments;
+      }
+
+      const nextDocuments = [...currentDocuments];
+      nextDocuments[documentIndex] = nextDocument;
+      return nextDocuments;
+    });
     setPagesByDocument((currentPages) => {
       const existingPages = currentPages[statusData.document_id];
       if (!existingPages) {
         return currentPages;
       }
 
+      let hasPageChanges = false;
+      const nextPages = existingPages.map((page) => {
+        const statusPage = statusData.pages.find(
+          (candidate) => candidate.page_id === page.page_id,
+        );
+
+        if (!statusPage) {
+          return page;
+        }
+
+        if (
+          page.status === statusPage.status &&
+          page.error_message === statusPage.error_message &&
+          page.lecture_notes_status === statusPage.lecture_notes_status &&
+          page.lecture_notes_error === statusPage.lecture_notes_error
+        ) {
+          return page;
+        }
+
+        hasPageChanges = true;
+        return {
+          ...page,
+          status: statusPage.status,
+          error_message: statusPage.error_message,
+          lecture_notes_status: statusPage.lecture_notes_status,
+          lecture_notes_error: statusPage.lecture_notes_error,
+        };
+      });
+
+      if (!hasPageChanges) {
+        return currentPages;
+      }
+
       return {
         ...currentPages,
-        [statusData.document_id]: existingPages.map((page) => {
-          const statusPage = statusData.pages.find(
-            (candidate) => candidate.page_id === page.page_id,
-          );
-
-          return statusPage
-            ? {
-                ...page,
-                status: statusPage.status,
-                error_message: statusPage.error_message,
-                lecture_notes_status: statusPage.lecture_notes_status,
-                lecture_notes_error: statusPage.lecture_notes_error,
-              }
-            : page;
-        }),
+        [statusData.document_id]: nextPages,
       };
     });
   }
@@ -969,8 +1146,43 @@ function App() {
         navigate(FILES_ROUTE, { replace: true });
       }
 
+      setDocumentStatusById((current) => {
+        const next = { ...current };
+        delete next[document.document_id];
+        return next;
+      });
+      setExpandedDocumentIds((current) => {
+        const next = { ...current };
+        delete next[document.document_id];
+        return next;
+      });
+      setPagesByDocument((current) => {
+        const next = { ...current };
+        delete next[document.document_id];
+        return next;
+      });
+      setPagesMessageByDocument((current) => {
+        const next = { ...current };
+        delete next[document.document_id];
+        return next;
+      });
+      setExamsByDocument((current) => {
+        const next = { ...current };
+        delete next[document.document_id];
+        return next;
+      });
+      setExamsLoadingByDocument((current) => {
+        const next = { ...current };
+        delete next[document.document_id];
+        return next;
+      });
+      if (expandedLectureNotesDocumentId === document.document_id) {
+        setExpandedLectureNotesDocumentId(null);
+      }
+
       setDocumentActionMessage("文档已删除。");
       await loadDocuments();
+      await loadPhaseExams();
     } catch (error) {
       setDocumentActionMessage(error instanceof Error ? error.message : "删除失败，请稍后重试。");
     } finally {
@@ -1420,6 +1632,203 @@ function App() {
     }
   }
 
+  async function loadDocumentExams(documentId: string) {
+    setExamsLoadingByDocument((current) => ({ ...current, [documentId]: true }));
+    try {
+      const data = await listDocumentExams(documentId);
+      setExamsByDocument((current) => ({ ...current, [documentId]: data }));
+    } catch (error) {
+      setDocumentActionMessage(
+        error instanceof Error ? error.message : "试卷列表加载失败，请稍后重试。",
+      );
+    } finally {
+      setExamsLoadingByDocument((current) => ({ ...current, [documentId]: false }));
+    }
+  }
+
+  async function loadPhaseExams() {
+    setPhaseExamsLoading(true);
+    try {
+      const data = await listPhaseExams();
+      setPhaseExams(data);
+    } catch (error) {
+      setDocumentActionMessage(
+        error instanceof Error ? error.message : "阶段考试列表加载失败，请稍后重试。",
+      );
+    } finally {
+      setPhaseExamsLoading(false);
+    }
+  }
+
+  async function loadExamForTaking(examId: string) {
+    setExamTakeLoading(true);
+    setCurrentExamResult(null);
+    try {
+      const [examMetadata, questionsWithoutAnswer] = await Promise.all([
+        readExamMetadata(examId),
+        readExamQuestions(examId, false),
+      ]);
+      setCurrentExam(examMetadata);
+      setCurrentExamQuestionsWithoutAnswer(questionsWithoutAnswer as ExamQuestionForTaking[]);
+      setDocumentActionMessage("");
+    } catch (error) {
+      setCurrentExam(null);
+      setCurrentExamQuestionsWithoutAnswer([]);
+      setDocumentActionMessage(
+        error instanceof Error ? error.message : "试卷加载失败，请稍后重试。",
+      );
+    } finally {
+      setExamTakeLoading(false);
+    }
+  }
+
+  async function loadExamAttemptResult(examId: string, attemptId: string) {
+    setExamTakeLoading(true);
+    try {
+      const [examMetadata, result] = await Promise.all([
+        readExamMetadata(examId),
+        readExamAttemptResult(examId, attemptId),
+      ]);
+      setCurrentExam(examMetadata);
+      setCurrentExamResult(result);
+      setCurrentExamQuestionsWithoutAnswer([]);
+      setDocumentActionMessage("");
+    } catch (error) {
+      setCurrentExamResult(null);
+      setDocumentActionMessage(
+        error instanceof Error ? error.message : "考试结果加载失败，请稍后重试。",
+      );
+    } finally {
+      setExamTakeLoading(false);
+    }
+  }
+
+  async function handleGenerateExam(documentId: string, difficulty: string = "medium") {
+    setDocumentActionState({ documentId, action: "regeneratingSummary" });
+    try {
+      await generateExamRequest(documentId, difficulty);
+      setDocumentActionMessage("试卷已开始生成，稍后刷新查看。");
+      await loadDocumentExams(documentId);
+    } catch (error) {
+      setDocumentActionMessage(
+        error instanceof Error ? error.message : "试卷生成失败，请稍后重试。",
+      );
+    } finally {
+      setDocumentActionState(null);
+    }
+  }
+
+  async function handleDeleteExam(documentId: string, examId: string) {
+    const confirmed = window.confirm("确定要删除这份试卷吗？相关答题记录和错题也会删除。");
+    if (!confirmed) {
+      return;
+    }
+
+    setDocumentActionMessage("");
+    try {
+      await deleteExamRequest(examId);
+      setDocumentActionMessage("试卷已删除。");
+      await loadDocumentExams(documentId);
+      await loadWrongQuestions();
+    } catch (error) {
+      setDocumentActionMessage(
+        error instanceof Error ? error.message : "试卷删除失败，请稍后重试。",
+      );
+    }
+  }
+
+  async function handleTakeExam(examId: string) {
+    navigate(`/exams/${encodeURIComponent(examId)}/take`);
+  }
+
+  async function handleSubmitExam(answers: Record<string, string>) {
+    if (!currentExam) {
+      return;
+    }
+
+    try {
+      const result = await submitExamAttempt(currentExam.id, answers);
+      setCurrentExamResult(result);
+      navigate(
+        `/exams/${encodeURIComponent(currentExam.id)}/attempts/${encodeURIComponent(
+          result.attempt.id,
+        )}/result`,
+      );
+      await loadWrongQuestions();
+    } catch (error) {
+      setDocumentActionMessage(
+        error instanceof Error ? error.message : "答题提交失败，请稍后重试。",
+      );
+      throw error;
+    }
+  }
+
+  function handleRetryExam() {
+    if (!currentExam) {
+      return;
+    }
+
+    setCurrentExamResult(null);
+    navigate(`/exams/${encodeURIComponent(currentExam.id)}/take`);
+  }
+
+  async function loadWrongQuestions() {
+    setWrongQuestionsLoading(true);
+    try {
+      const data = await listWrongQuestions();
+      setWrongQuestions(data);
+    } catch (error) {
+      setDocumentActionMessage(
+        error instanceof Error ? error.message : "错题本加载失败，请稍后重试。",
+      );
+    } finally {
+      setWrongQuestionsLoading(false);
+    }
+  }
+
+  async function handleReviewWrongQuestion(wrongId: string) {
+    try {
+      await reviewWrongQuestion(wrongId);
+      await loadWrongQuestions();
+    } catch (error) {
+      setDocumentActionMessage(
+        error instanceof Error ? error.message : "标记复习失败，请稍后重试。",
+      );
+    }
+  }
+
+  async function handleDeleteWrongQuestion(wrongId: string) {
+    try {
+      await deleteWrongQuestion(wrongId);
+      await loadWrongQuestions();
+    } catch (error) {
+      setDocumentActionMessage(
+        error instanceof Error ? error.message : "删除错题失败，请稍后重试。",
+      );
+    }
+  }
+
+  async function handleCreatePhaseExam(
+    documentIds: string[],
+    name: string,
+    difficulty: string,
+  ) {
+    setPhaseExamCreating(true);
+    try {
+      await generatePhaseExam(documentIds, name, difficulty);
+      await loadPhaseExams();
+      setDocumentActionMessage("阶段考试已开始生成，生成完成后可点击开始考试。");
+      navigate(FILES_ROUTE);
+    } catch (error) {
+      setDocumentActionMessage(
+        error instanceof Error ? error.message : "阶段考试生成失败，请稍后重试。",
+      );
+      throw error;
+    } finally {
+      setPhaseExamCreating(false);
+    }
+  }
+
   function formatCreatedAt(value: string) {
     const date = new Date(value);
 
@@ -1652,7 +2061,18 @@ function App() {
     ) : null;
 
     return (
-      <ReaderView
+      <Suspense
+        fallback={
+          <main className="app-shell app-shell--files">
+            <section className="status-panel app-page-panel">
+              <p className="eyebrow">Slides Reader</p>
+              <h1>正在加载阅读器...</h1>
+              <p className="description">PDF 阅读模块正在初始化。</p>
+            </section>
+          </main>
+        }
+      >
+        <ReaderView
         readerDocument={readerDocument}
         readerRightSidebar={readerRightSidebar}
         isReaderTopbarCollapsed={isReaderTopbarCollapsed}
@@ -1713,6 +2133,92 @@ function App() {
         onRegeneratePageLectureNotes={(document, page) => {
           void regeneratePageLectureNotes(document, page);
         }}
+        />
+      </Suspense>
+    );
+  }
+
+  if (isExamTakeRoute && routeExamId) {
+    return (
+      <ExamTakeView
+        examId={routeExamId}
+        title={currentExam?.title ?? "考试答题"}
+        questions={currentExamQuestionsWithoutAnswer}
+        isLoading={examTakeLoading}
+        onSubmit={async (answers) => {
+          await handleSubmitExam(answers);
+        }}
+        onBack={() => navigate(FILES_ROUTE)}
+      />
+    );
+  }
+
+  if (isExamResultRoute && routeExamId) {
+    if (examTakeLoading && !currentExamResult) {
+      return (
+        <main className="app-shell app-shell--files">
+          <section className="status-panel app-page-panel">
+            <p className="eyebrow">Slides Reader</p>
+            <h1>正在加载考试结果...</h1>
+            <p className="description">正在读取本次答题记录和解析。</p>
+          </section>
+        </main>
+      );
+    }
+
+    if (!currentExamResult) {
+      return (
+        <main className="app-shell app-shell--files">
+          <section className="status-panel app-page-panel">
+            <p className="eyebrow">Slides Reader</p>
+            <h1>考试结果不可用</h1>
+            <p className="description">
+              {documentActionMessage || "没有找到对应的答题结果。"}
+            </p>
+            <button type="button" className="secondary-action-button" onClick={() => navigate(FILES_ROUTE)}>
+              返回文件
+            </button>
+          </section>
+        </main>
+      );
+    }
+
+    return (
+      <ExamResultView
+        result={currentExamResult}
+        questions={currentExamResult.questions}
+        onBack={() => navigate(FILES_ROUTE)}
+        onRetry={handleRetryExam}
+      />
+    );
+  }
+
+  if (isWrongBookRoute) {
+    const wrongBookDocumentId = searchParams.get("document_id");
+    const wrongBookDocument = wrongBookDocumentId
+      ? documents.find((document) => document.document_id === wrongBookDocumentId)
+      : undefined;
+
+    return (
+      <WrongBookView
+        wrongQuestions={wrongQuestions}
+        documentId={wrongBookDocumentId ?? undefined}
+        documentTitle={wrongBookDocument?.title}
+        onBack={() => navigate(FILES_ROUTE)}
+        onReview={(wrongId) => handleReviewWrongQuestion(wrongId)}
+        onDelete={(wrongId) => handleDeleteWrongQuestion(wrongId)}
+      />
+    );
+  }
+
+  if (isPhaseExamCreateRoute) {
+    return (
+      <PhaseExamCreateView
+        documents={documents}
+        onBack={() => navigate(FILES_ROUTE)}
+        onCreate={(documentIds, name, difficulty) =>
+          handleCreatePhaseExam(documentIds, name, difficulty)
+        }
       />
     );
   }
@@ -1761,6 +2267,23 @@ function App() {
             >
               返回阅读
             </button>
+            <button
+              type="button"
+              className="topbar-button"
+              onClick={() => {
+                void loadWrongQuestions();
+                navigate(WRONG_BOOK_ROUTE);
+              }}
+            >
+              错题本
+            </button>
+            <button
+              type="button"
+              className="topbar-button"
+              onClick={() => navigate(PHASE_EXAM_CREATE_ROUTE)}
+            >
+              阶段考试
+            </button>
           </div>
         </header>
 
@@ -1796,6 +2319,18 @@ function App() {
             expandedLectureNotesDocumentId={expandedLectureNotesDocumentId}
             pagesByDocument={pagesByDocument}
             pagesMessageByDocument={pagesMessageByDocument}
+            examsByDocument={examsByDocument}
+            examsLoadingByDocument={examsLoadingByDocument}
+            phaseExams={phaseExams}
+            phaseExamsLoading={phaseExamsLoading}
+            onRefreshPhaseExams={() => {
+              void loadPhaseExams();
+            }}
+            onTakePhaseExam={(phaseExam) => {
+              if (phaseExam.exam_id) {
+                void handleTakeExam(phaseExam.exam_id);
+              }
+            }}
             onReturnToReader={returnToReader}
             onFileChange={handleFileChange}
             onUploadSubmit={handleUploadSubmit}
@@ -1831,6 +2366,19 @@ function App() {
             onRegeneratePageLectureNotes={(document, page) => {
               void regeneratePageLectureNotes(document, page);
             }}
+            onGenerateExam={(document) => {
+              void handleGenerateExam(document.document_id);
+            }}
+            onTakeExam={(examId) => {
+              void handleTakeExam(examId);
+            }}
+            onDeleteExam={(documentId, examId) => {
+              void handleDeleteExam(documentId, examId);
+            }}
+            onViewWrongBook={(document) => {
+              void loadWrongQuestions();
+              navigate(`/wrong-book?document_id=${encodeURIComponent(document.document_id)}`);
+            }}
             isDocumentBusy={isDocumentBusy}
             isPageLectureNotesBusy={isPageLectureNotesBusy}
             resolveLectureNotesPaused={resolveLectureNotesPaused}
@@ -1855,15 +2403,18 @@ function App() {
             courseSummaryPrompt={courseSummaryPrompt}
             lectureNotesPrompt={lectureNotesPrompt}
             pageChatPrompt={pageChatPrompt}
+            examGenerationPrompt={examGenerationPrompt}
             isCourseSummaryPromptExpanded={isCourseSummaryPromptExpanded}
             isLectureNotesPromptExpanded={isLectureNotesPromptExpanded}
             isPageChatPromptExpanded={isPageChatPromptExpanded}
+            isExamGenerationPromptExpanded={isExamGenerationPromptExpanded}
             llmTestPrompt={llmTestPrompt}
             llmConfigMessage={llmConfigMessage}
             llmTestAnswer={llmTestAnswer}
             courseSummaryPromptTextareaRef={courseSummaryPromptTextareaRef}
             lectureNotesPromptTextareaRef={lectureNotesPromptTextareaRef}
             pageChatPromptTextareaRef={pageChatPromptTextareaRef}
+            examGenerationPromptTextareaRef={examGenerationPromptTextareaRef}
             onSubmit={saveLlmConfig}
             onBaseUrlChange={setLlmBaseUrl}
             onApiKeyChange={setLlmApiKey}
@@ -1878,9 +2429,11 @@ function App() {
             onCourseSummaryPromptChange={setCourseSummaryPrompt}
             onLectureNotesPromptChange={setLectureNotesPrompt}
             onPageChatPromptChange={setPageChatPrompt}
+            onExamGenerationPromptChange={setExamGenerationPrompt}
             onToggleCourseSummaryPrompt={() => setIsCourseSummaryPromptExpanded((value) => !value)}
             onToggleLectureNotesPrompt={() => setIsLectureNotesPromptExpanded((value) => !value)}
             onTogglePageChatPrompt={() => setIsPageChatPromptExpanded((value) => !value)}
+            onToggleExamGenerationPrompt={() => setIsExamGenerationPromptExpanded((value) => !value)}
             onTestPromptChange={setLlmTestPrompt}
             onTestLlmConfig={() => {
               void testLlmConfig();

@@ -2,7 +2,7 @@
 
 import math
 import sqlite3
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from fastapi import HTTPException, status
@@ -49,7 +49,7 @@ def ensure_note_block_for_ready_page(connection: sqlite3.Connection, page) -> No
     if existing_note_block is not None:
         return
 
-    now = datetime.now(UTC).isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     connection.execute(
         """
         INSERT INTO note_blocks (
@@ -98,7 +98,7 @@ def sync_note_block_content_for_page(
     if page is None:
         return
 
-    now = datetime.now(UTC).isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     existing_note_block = connection.execute(
         "SELECT id FROM note_blocks WHERE page_id = ?",
         (page["id"],),
@@ -184,7 +184,7 @@ def update_note_block_position(note_block_id: str, request: NoteBlockPositionUpd
                 detail="没有找到对应的讲稿文字块。",
             )
 
-        updated_at = datetime.now(UTC).isoformat()
+        updated_at = datetime.now(timezone.utc).isoformat()
         connection.execute(
             """
             UPDATE note_blocks

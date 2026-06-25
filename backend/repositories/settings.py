@@ -1,6 +1,6 @@
 """应用配置表的数据访问函数。"""
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
 
@@ -36,7 +36,7 @@ def write_app_settings(next_settings: dict[str, str]) -> None:
     """
 
     # updated_at 使用 UTC 时间，便于跨地区或部署环境排查配置变更。
-    updated_at = datetime.now(UTC).isoformat()
+    updated_at = datetime.now(timezone.utc).isoformat()
 
     init_database()
 

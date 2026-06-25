@@ -1,0 +1,156 @@
+.phase-exam-create-view {
+  min-height: 100vh;
+  background: #f8f9fa;
+}
+
+.phase-exam-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 24px;
+  background: #fff;
+  border-bottom: 1px solid #e8eaed;
+}
+
+.phase-exam-header h2 {
+  margin: 0;
+  flex: 1;
+  font-size: 20px;
+  color: #1a1a2e;
+}
+
+.phase-exam-main {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.phase-exam-section {
+  background: #fff;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.phase-exam-section h3 {
+  margin: 0 0 16px;
+  font-size: 16px;
+  color: #333;
+}
+
+.phase-exam-document-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.phase-exam-document-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #e8eaed;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.phase-exam-document-item:hover {
+  background: #f8f9fa;
+}
+
+.phase-exam-document-item.selected {
+  border-color: #4a90d9;
+  background: #eef4fb;
+}
+
+.phase-exam-document-title {
+  flex: 1;
+  font-size: 14px;
+  color: #333;
+}
+
+.phase-exam-document-pages {
+  font-size: 13px;
+  color: #888;
+}
+
+.phase-exam-empty {
+  color: #888;
+  font-size: 14px;
+}
+
+.phase-exam-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.phase-exam-field label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #444;
+}
+
+.phase-exam-field input,
+.phase-exam-field select {
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.phase-exam-field input:focus,
+.phase-exam-field select:focus {
+  outline: none;
+  border-color: #4a90d9;
+  box-shadow: 0 0 0 3px rgba(74, 144, 217, 0.15);
+}
+
+.phase-exam-message {
+  margin-bottom: 20px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.phase-exam-message-success {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.phase-exam-message-error {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.phase-exam-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.phase-exam-submit {
+  padding: 12px 28px;
+  background: #4a90d9;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, opacity 0.2s;
+}
+
+.phase-exam-submit:hover:not(:disabled) {
+  background: #3a7bc8;
+}
+
+.phase-exam-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

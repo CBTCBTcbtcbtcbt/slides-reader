@@ -147,6 +147,26 @@ function normalizeMathDelimiters(markdown: string) {
     .replace(/\\\(([\s\S]*?)\\\)/g, (_match, formula: string) => `$${formula.trim()}$`);
 }
 
+function stripOuterMarkdownFence(content: string) {
+  // LLM 有时把整份讲稿包进 ```markdown 代码块；显示时应按普通 Markdown 渲染。
+  const trimmedContent = content.trim();
+  for (const language of ["markdown", "md"]) {
+    const openingFence = "```" + language;
+    if (trimmedContent.toLowerCase().startsWith(openingFence) && trimmedContent.endsWith("```")) {
+      return trimmedContent.slice(openingFence.length, -3).trim();
+    }
+  }
+
+  if (trimmedContent.startsWith("```") && trimmedContent.endsWith("```")) {
+    const innerContent = trimmedContent.slice(3, -3).trim();
+    if (innerContent.startsWith("#") || innerContent.includes("\n#") || innerContent.includes("\n- ")) {
+      return innerContent;
+    }
+  }
+
+  return content;
+}
+
 function normalizeLooseStrongMarkers(markdown: string) {
   // LLM 偶尔会把 **加粗** 写成 * *加粗* *，这里修成标准 Markdown 语法。
   return markdown.replace(/\*\s+\*([\s\S]*?)\*\s+\*/g, (_match, strongText: string) => {
@@ -310,7 +330,7 @@ function normalizeOutsideFences(markdown: string, normalizeSegment: (segment: st
 export function MarkdownContent({ content, variant = "default" }: MarkdownContentProps) {
   const className =
     variant === "default" ? "markdown-content" : `markdown-content markdown-content--${variant}`;
-  const normalizedContent = normalizeMarkdownMath(content);
+  const normalizedContent = normalizeMarkdownMath(stripOuterMarkdownFence(content));
 
   return (
     <div className={className}>

@@ -1,6 +1,6 @@
 """逐页讲稿生成队列的数据访问函数。"""
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from database import get_database_connection
@@ -10,7 +10,7 @@ def _utc_now_text() -> str:
     """返回用于数据库记录的 UTC ISO 时间字符串。"""
 
     # SQLite 里这里直接存文本，便于调试时从数据库文件中阅读。
-    return datetime.now(UTC).isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 def enqueue_pages_for_lecture_notes(pages) -> int:

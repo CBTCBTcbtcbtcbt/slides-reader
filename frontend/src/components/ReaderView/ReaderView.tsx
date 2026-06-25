@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import { memo, useMemo, type CSSProperties, type ReactNode } from "react";
 import {
   Document as PdfDocument,
   Page as PdfPage,
@@ -17,6 +17,14 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
   import.meta.url,
 ).toString();
+
+// 把这些静态 JSX 提升到组件外部，避免每次渲染都给 react-pdf 传入新的对象引用，
+// 从而防止 PDF 文档因 props 变化而反复重新加载导致闪屏。
+const PDF_LOADING_ELEMENT = <div className="pdf-loading">正在加载 PDF...</div>;
+const PDF_ERROR_ELEMENT = <div className="pdf-error">PDF 加载失败，请返回列表后重试。</div>;
+const PDF_PAGE_LOADING_ELEMENT = <div className="pdf-loading">正在渲染当前页...</div>;
+
+const MemoizedPdfPage = memo(PdfPage);
 
 type ReaderViewProps = {
   readerDocument: DocumentItem;
@@ -121,7 +129,7 @@ export function ReaderView({
   onRegenerateCourseSummary,
   onRegeneratePageLectureNotes,
 }: ReaderViewProps) {
-  const fileUrl = `/api/documents/${readerDocument.document_id}/file`;
+  const fileUrl = `api/documents/${readerDocument.document_id}/file`;
   const isRegeneratingCurrentPageLectureNotes =
     currentReaderPage !== undefined &&
     documentActionState?.documentId === readerDocument.document_id &&
@@ -240,8 +248,8 @@ export function ReaderView({
             <PdfDocument
               file={fileUrl}
               className="pdf-document"
-              loading={<div className="pdf-loading">正在加载 PDF...</div>}
-              error={<div className="pdf-error">PDF 加载失败，请返回列表后重试。</div>}
+              loading={PDF_LOADING_ELEMENT}
+              error={PDF_ERROR_ELEMENT}
               onLoadSuccess={onPdfLoadSuccess}
               onLoadError={onPdfLoadError}
             >
@@ -299,11 +307,11 @@ export function ReaderView({
                   />
 
                   <div className="pdf-page-stage">
-                    <PdfPage
+                    <MemoizedPdfPage
                       key={`${readerDocument.document_id}-${currentPdfPage}`}
                       pageNumber={currentPdfPage}
                       width={pdfPageWidth}
-                      loading={<div className="pdf-loading">正在渲染当前页...</div>}
+                      loading={PDF_PAGE_LOADING_ELEMENT}
                       renderAnnotationLayer={true}
                       renderTextLayer={true}
                       onLoadSuccess={onPdfPageLoadSuccess}

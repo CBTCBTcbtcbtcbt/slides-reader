@@ -93,6 +93,7 @@ export type LLMConfigResponse = {
   course_summary_prompt: string;
   lecture_notes_prompt: string;
   page_chat_prompt: string;
+  exam_generation_prompt: string;
   api_key_configured: boolean;
   api_key_preview: string;
 };
@@ -104,6 +105,7 @@ export type LLMConfigUpdatePayload = {
   course_summary_prompt: string;
   lecture_notes_prompt: string;
   page_chat_prompt: string;
+  exam_generation_prompt: string;
   api_key?: string;
 };
 
@@ -164,4 +166,96 @@ export type DocumentStatusResponse = {
   lecture_notes_paused: boolean;
   should_poll: boolean;
   pages: DocumentStatusPageItem[];
+};
+
+export type ExamItem = {
+  id: string;
+  document_id: string;
+  title: string;
+  description: string | null;
+  status: string;
+  error_message: string | null;
+  total_score: number;
+  latest_attempt_score: number | null;
+  created_at: string;
+};
+
+export type ExamQuestionItem = {
+  id: string;
+  exam_id: string;
+  question_number: number;
+  section: string;
+  question_type: "choice" | "fill_in";
+  score: number;
+  content: string;
+  options: string[] | null;
+  answer: string;
+  explanation: string;
+  source_page: number | null;
+  expected_type: string | null;
+  difficulty: string | null;
+  knowledge_tag: string | null;
+  created_at: string;
+};
+
+export type ExamQuestionForTaking = Omit<ExamQuestionItem, "answer" | "explanation">;
+
+export type ExamWithQuestions = ExamItem & {
+  questions: ExamQuestionItem[];
+};
+
+export type ExamAttemptItem = {
+  id: string;
+  exam_id: string;
+  started_at: string;
+  finished_at: string | null;
+  score: number | null;
+  answers: Record<string, string>;
+};
+
+export type ExamAttemptResult = {
+  status: string;
+  attempt: ExamAttemptItem;
+  total_score: number;
+  max_score: number;
+  questions: ExamQuestionItem[];
+  question_results: {
+    question_id: string;
+    user_answer: string;
+    correct_answer: string;
+    is_correct: boolean;
+    score: number;
+    max_score: number;
+  }[];
+};
+
+export type WrongQuestionItem = {
+  id: string;
+  question_id: string;
+  exam_id: string;
+  attempt_id: string;
+  user_answer: string;
+  created_at: string;
+  reviewed: number;
+  question_content: string;
+  question_options: string[] | null;
+  correct_answer: string;
+  explanation: string;
+  question_type: string;
+  score: number;
+  source_page: number | null;
+  knowledge_tag: string | null;
+  document_id: string;
+  document_title: string;
+};
+
+export type PhaseExamItem = {
+  id: string;
+  name: string;
+  document_ids: string[];
+  difficulty: string;
+  exam_id: string | null;
+  status: string;
+  error_message: string | null;
+  created_at: string;
 };

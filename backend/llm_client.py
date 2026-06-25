@@ -26,10 +26,11 @@ class LLMConfig:
     model: str
     # timeout_seconds 是 HTTP 请求超时时间，单位是秒。
     timeout_seconds: int
-    # 三个 prompt 分别服务课程简介、逐页讲稿和当前页问答。
+    # 四个 prompt 分别服务课程简介、逐页讲稿、当前页问答和试卷生成。
     course_summary_prompt: str
     lecture_notes_prompt: str
     page_chat_prompt: str
+    exam_generation_prompt: str
 
 
 def mask_secret(secret: str) -> str:
@@ -114,6 +115,7 @@ def get_llm_config() -> LLMConfig:
         course_summary_prompt=merged_settings["course_summary_prompt"].strip(),
         lecture_notes_prompt=merged_settings["lecture_notes_prompt"].strip(),
         page_chat_prompt=merged_settings["page_chat_prompt"].strip(),
+        exam_generation_prompt=merged_settings["exam_generation_prompt"].strip(),
     )
 
 
@@ -134,6 +136,7 @@ def serialize_llm_config(config: LLMConfig) -> dict[str, str | int | bool]:
         "course_summary_prompt": config.course_summary_prompt,
         "lecture_notes_prompt": config.lecture_notes_prompt,
         "page_chat_prompt": config.page_chat_prompt,
+        "exam_generation_prompt": config.exam_generation_prompt,
         "api_key_configured": bool(config.api_key),
         "api_key_preview": mask_secret(config.api_key),
     }
@@ -207,12 +210,23 @@ class LLMClient:
 
         self.config = config
 
-    def complete_text(self, prompt: str) -> str:
+    def complete_text(
+        self,
+        prompt: str,
+        max_tokens: int | None = None,
+        response_format: dict[str, str] | None = None,
+        timeout_seconds: int | None = None,
+    ) -> str:
         """发送纯文本提示词并返回模型文本回答。"""
 
         # chat completions 使用 messages 数组表达一轮对话。
         messages = [{"role": "user", "content": prompt}]
-        return self._send_chat_completion(messages)
+        return self._send_chat_completion(
+            messages,
+            max_tokens=max_tokens,
+            response_format=response_format,
+            timeout_seconds=timeout_seconds,
+        )
 
     def stream_text(self, prompt: str) -> Iterator[str]:
         """发送纯文本提示词，并逐段产出模型回答增量。
@@ -246,7 +260,14 @@ class LLMClient:
         """
 
         messages = self._build_image_messages(prompt=prompt, images=images)
-        return self._send_chat_completion(messages)
+        try:
+            return self._send_chat_completion(messages)
+        except HTTPException as error:
+            # 部分模型/服务不支持图片输入；遇到这种情况时自动回退到纯文本模式，
+            # 保证讲稿生成、当前页问答等核心功能在不支持视觉的模型上仍可工作。
+            if self._is_image_input_unsupported(error):
+                return self.complete_text(prompt)
+            raise
 
     def stream_with_images(self, prompt: str, images: list[tuple[Path, str]]) -> Iterator[str]:
         """发送文本加多张图片，并逐段产出模型回答增量。
@@ -261,7 +282,30 @@ class LLMClient:
 
         # 图文流式请求的 content 结构与非流式请求完全一致。
         messages = self._build_image_messages(prompt=prompt, images=images)
-        yield from self._send_chat_completion_stream(messages)
+        try:
+            yield from self._send_chat_completion_stream(messages)
+        except HTTPException as error:
+            if self._is_image_input_unsupported(error):
+                yield from self.stream_text(prompt)
+                return
+            raise
+
+    @staticmethod
+    def _is_image_input_unsupported(error: HTTPException) -> bool:
+        """判断 LLM 错误是否表示当前模型不支持图片输入。"""
+
+        detail = str(error.detail).lower()
+        unsupported_markers = [
+            "image input not supported",
+            "image_url is not supported",
+            "images are not supported",
+            "does not support image",
+            "vision is not supported",
+            "不支持图像",
+            "不支持图片",
+            "image input is not supported",
+        ]
+        return any(marker in detail for marker in unsupported_markers)
 
     def _build_image_messages(self, prompt: str, images: list[tuple[Path, str]]) -> list[dict[str, Any]]:
         """构造 OpenAI-compatible 图文 chat messages。"""
@@ -286,68 +330,100 @@ class LLMClient:
         ]
         return messages
 
-    def _send_chat_completion(self, messages: list[dict[str, Any]]) -> str:
+    def _send_chat_completion(
+        self,
+        messages: list[dict[str, Any]],
+        max_tokens: int | None = None,
+        response_format: dict[str, str] | None = None,
+        timeout_seconds: int | None = None,
+    ) -> str:
         """向 OpenAI-compatible chat completions 接口发送请求。"""
 
         # 发请求前统一检查配置，避免服务返回难理解的认证错误。
         validate_llm_config(self.config)
 
-        payload = {"model": self.config.model, "messages": messages}
-        request_body = json.dumps(payload).encode("utf-8")
+        # 允许单次请求覆盖全局超时；试卷/阶段考试等长输出场景需要更长时间。
+        request_timeout = timeout_seconds if timeout_seconds is not None else self.config.timeout_seconds
 
-        request = urllib.request.Request(
-            url=build_chat_completions_url(self.config.base_url),
-            data=request_body,
-            method="POST",
-            headers={
-                "Authorization": f"Bearer {self.config.api_key}",
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-                "User-Agent": "SlidesReader/0.1 (+OpenAI-compatible client)",
-            },
-        )
+        last_error: urllib.error.HTTPError | None = None
+        for attempt in range(2):
+            payload: dict[str, Any] = {"model": self.config.model, "messages": messages}
+            if max_tokens is not None:
+                payload["max_tokens"] = max_tokens
+            # 部分模型/服务不支持 response_format，首次失败后第二次尝试不带该参数。
+            if response_format is not None and attempt == 0:
+                payload["response_format"] = response_format
 
-        try:
-            with urllib.request.urlopen(
-                request,
-                timeout=self.config.timeout_seconds,
-            ) as response:
-                response_body = response.read().decode("utf-8")
-        except urllib.error.HTTPError as error:
-            # HTTPError 表示服务端返回 4xx/5xx，尽量把响应体带给前端排查。
-            error_body = error.read().decode("utf-8", errors="replace")
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"LLM 服务返回错误：HTTP {error.code}，{error_body}",
-            ) from error
-        except urllib.error.URLError as error:
-            # URLError 通常代表网络不可达、域名错误或连接失败。
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"无法连接 LLM 服务：{error.reason}",
-            ) from error
-        except TimeoutError as error:
-            raise HTTPException(
-                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail="LLM 请求超时，请检查服务地址或调大超时时间。",
-            ) from error
+            request_body = json.dumps(payload).encode("utf-8")
 
-        try:
-            data = json.loads(response_body)
-            content = data["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"LLM 服务返回格式不符合 OpenAI-compatible chat completions：{response_body}",
-            ) from error
-
-        if not isinstance(content, str) or not content.strip():
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="LLM 服务返回了空回答。",
+            request = urllib.request.Request(
+                url=build_chat_completions_url(self.config.base_url),
+                data=request_body,
+                method="POST",
+                headers={
+                    "Authorization": f"Bearer {self.config.api_key}",
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                    "User-Agent": "SlidesReader/0.1 (+OpenAI-compatible client)",
+                },
             )
 
-        return content
+            try:
+                with urllib.request.urlopen(
+                    request,
+                    timeout=request_timeout,
+                ) as response:
+                    response_body = response.read().decode("utf-8")
+            except urllib.error.HTTPError as error:
+                # HTTPError 表示服务端返回 4xx/5xx；如果带了 response_format，尝试去掉重试一次。
+                last_error = error
+                if response_format is not None and attempt == 0:
+                    continue
+                error_body = error.read().decode("utf-8", errors="replace")
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"LLM 服务返回错误：HTTP {error.code}，{error_body}",
+                ) from error
+            except urllib.error.URLError as error:
+                # URLError 通常代表网络不可达、域名错误或连接失败。
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"无法连接 LLM 服务：{error.reason}",
+                ) from error
+            except TimeoutError as error:
+                raise HTTPException(
+                    status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                    detail="LLM 请求超时，请检查服务地址或调大超时时间。",
+                ) from error
+
+            try:
+                data = json.loads(response_body)
+                content = data["choices"][0]["message"]["content"]
+            except (KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"LLM 服务返回格式不符合 OpenAI-compatible chat completions：{response_body}",
+                ) from error
+
+            if not isinstance(content, str) or not content.strip():
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="LLM 服务返回了空回答。",
+                )
+
+            return content
+
+        # 防御性兜底：循环逻辑保证不会走到这里。
+        if last_error is not None:
+            error_body = last_error.read().decode("utf-8", errors="replace")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"LLM 服务返回错误：HTTP {last_error.code}，{error_body}",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="LLM 请求失败。",
+        )
 
     def _send_chat_completion_stream(self, messages: list[dict[str, Any]]) -> Iterator[str]:
         """向 OpenAI-compatible chat completions 接口发送流式请求。"""

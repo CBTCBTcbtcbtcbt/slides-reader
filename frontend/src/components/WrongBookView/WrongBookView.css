@@ -1,0 +1,174 @@
+.wrong-book-view {
+  min-height: 100vh;
+  background: #f8f9fa;
+}
+
+.wrong-book-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 24px;
+  background: #fff;
+  border-bottom: 1px solid #e8eaed;
+}
+
+.wrong-book-header h2 {
+  margin: 0;
+  flex: 1;
+  font-size: 20px;
+  color: #1a1a2e;
+}
+
+.wrong-count {
+  font-size: 14px;
+  color: #666;
+}
+
+.wrong-book-main {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.wrong-book-empty {
+  text-align: center;
+  padding: 80px 24px;
+  color: #666;
+}
+
+.wrong-group {
+  margin-bottom: 24px;
+}
+
+.wrong-group-title {
+  margin: 0 0 12px;
+  font-size: 16px;
+  color: #333;
+}
+
+.wrong-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.wrong-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.wrong-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.wrong-type {
+  font-size: 12px;
+  padding: 3px 8px;
+  background: #fff3e0;
+  color: #ef6c00;
+  border-radius: 12px;
+}
+
+.wrong-tag {
+  font-size: 12px;
+  padding: 3px 8px;
+  background: #eef4fb;
+  color: #4a90d9;
+  border-radius: 12px;
+}
+
+.wrong-page {
+  font-size: 12px;
+  color: #888;
+}
+
+.wrong-content {
+  margin: 0 0 12px;
+  font-size: 15px;
+  color: #333;
+  line-height: 1.5;
+}
+
+.wrong-options {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wrong-options li {
+  font-size: 14px;
+  color: #555;
+}
+
+.wrong-answer-row {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.wrong-user-answer {
+  color: #c62828;
+}
+
+.wrong-correct-answer {
+  color: #2e7d32;
+}
+
+.wrong-explanation {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 14px;
+  font-size: 14px;
+  color: #555;
+  line-height: 1.6;
+}
+
+.wrong-explanation strong {
+  color: #333;
+}
+
+.wrong-explanation p {
+  margin: 6px 0 0;
+}
+
+.wrong-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.wrong-actions button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.wrong-actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.wrong-review-button {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.wrong-delete-button {
+  background: #ffebee;
+  color: #c62828;
+}

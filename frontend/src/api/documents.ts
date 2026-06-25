@@ -13,12 +13,12 @@ import type { NoteBlockLayout } from "../types/ui";
 import { readErrorMessage, requestJson, requestNoContent } from "./http";
 
 export function listDocuments(): Promise<DocumentItem[]> {
-  return requestJson<DocumentItem[]>("/api/documents", undefined, "文档列表加载失败");
+  return requestJson<DocumentItem[]>("api/documents", undefined, "文档列表加载失败");
 }
 
 export function readDocumentStatus(documentId: string): Promise<DocumentStatusResponse> {
   return requestJson<DocumentStatusResponse>(
-    `/api/documents/${documentId}/status`,
+    `api/documents/${documentId}/status`,
     undefined,
     "生成进度加载失败",
   );
@@ -30,7 +30,7 @@ export function uploadDocument(file: File): Promise<UploadResponse> {
   formData.append("file", file);
 
   return requestJson<UploadResponse>(
-    "/api/documents",
+    "api/documents",
     {
       method: "POST",
       body: formData,
@@ -41,7 +41,7 @@ export function uploadDocument(file: File): Promise<UploadResponse> {
 
 export function renameDocument(documentId: string, title: string): Promise<DocumentItem> {
   return requestJson<DocumentItem>(
-    `/api/documents/${documentId}`,
+    `api/documents/${documentId}`,
     {
       method: "PATCH",
       headers: {
@@ -55,7 +55,7 @@ export function renameDocument(documentId: string, title: string): Promise<Docum
 
 export function deleteDocument(documentId: string): Promise<void> {
   return requestNoContent(
-    `/api/documents/${documentId}`,
+    `api/documents/${documentId}`,
     {
       method: "DELETE",
     },
@@ -65,7 +65,7 @@ export function deleteDocument(documentId: string): Promise<void> {
 
 export function regenerateCourseSummary(documentId: string): Promise<{ status: string; document_id: string }> {
   return requestJson(
-    `/api/documents/${documentId}/course-summary/regenerate`,
+    `api/documents/${documentId}/course-summary/regenerate`,
     { method: "POST" },
     "重新生成失败",
   );
@@ -73,7 +73,7 @@ export function regenerateCourseSummary(documentId: string): Promise<{ status: s
 
 export function listDocumentPages(documentId: string): Promise<PageItem[]> {
   return requestJson<PageItem[]>(
-    `/api/documents/${documentId}/pages`,
+    `api/documents/${documentId}/pages`,
     undefined,
     "页面讲稿加载失败",
   );
@@ -93,7 +93,7 @@ export function submitPageChat(
     });
 
     return requestJson<PageChatResponse>(
-      `/api/pages/${pageId}/chat`,
+      `api/pages/${pageId}/chat`,
       {
         method: "POST",
         body: formData,
@@ -103,7 +103,7 @@ export function submitPageChat(
   }
 
   return requestJson<PageChatResponse>(
-    `/api/pages/${pageId}/chat`,
+    `api/pages/${pageId}/chat`,
     {
       method: "POST",
       headers: {
@@ -152,7 +152,7 @@ export async function submitPageChatStream(
           signal: options.signal,
         };
 
-  const response = await fetch(`/api/pages/${pageId}/chat/stream`, requestInit);
+  const response = await fetch(`api/pages/${pageId}/chat/stream`, requestInit);
   if (!response.ok) {
     const message = await readErrorMessage(
       response,
@@ -199,7 +199,7 @@ export function updateNoteBlockPosition(
   nextPosition: NoteBlockLayout,
 ): Promise<NoteBlockItem> {
   return requestJson<NoteBlockItem>(
-    `/api/note-blocks/${noteBlockId}`,
+    `api/note-blocks/${noteBlockId}`,
     {
       method: "PATCH",
       headers: {
@@ -215,7 +215,7 @@ export function regenerateDocumentLectureNotes(
   documentId: string,
 ): Promise<{ status: string; document_id: string }> {
   return requestJson(
-    `/api/documents/${documentId}/lecture-notes/regenerate`,
+    `api/documents/${documentId}/lecture-notes/regenerate`,
     { method: "POST" },
     "重新生成讲稿失败",
   );
@@ -225,7 +225,7 @@ export function clearDocumentLectureNotesQueue(
   documentId: string,
 ): Promise<{ status: string; document_id: string; cleared_count: number }> {
   return requestJson(
-    `/api/documents/${documentId}/lecture-notes/queue`,
+    `api/documents/${documentId}/lecture-notes/queue`,
     { method: "DELETE" },
     "清空待生成队列失败",
   );
@@ -233,9 +233,9 @@ export function clearDocumentLectureNotesQueue(
 
 export function generateRemainingLectureNotes(
   documentId: string,
-): Promise<{ status: string; document_id: string; queued_count: number }> {
+): Promise<{ status: string; document_id: string; queued_count: number; started: boolean }> {
   return requestJson(
-    `/api/documents/${documentId}/lecture-notes/remaining`,
+    `api/documents/${documentId}/lecture-notes/remaining`,
     { method: "POST" },
     "生成剩余讲稿失败",
   );
@@ -249,7 +249,7 @@ export function toggleDocumentLectureNotesPaused(
   const errorPrefix = isPaused ? "继续逐页讲稿生成失败" : "暂停逐页讲稿生成失败";
 
   return requestJson(
-    `/api/documents/${documentId}/lecture-notes/${nextAction}`,
+    `api/documents/${documentId}/lecture-notes/${nextAction}`,
     { method: "POST" },
     errorPrefix,
   );
@@ -259,7 +259,7 @@ export function regeneratePageLectureNotes(
   pageId: string,
 ): Promise<{ status: string; document_id: string; page_id: string; page_number: number }> {
   return requestJson(
-    `/api/pages/${pageId}/regenerate`,
+    `api/pages/${pageId}/regenerate`,
     { method: "POST" },
     "重新生成单页讲稿失败",
   );

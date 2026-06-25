@@ -1,5 +1,6 @@
 """课程简介、逐页讲稿和当前页问答的生成流程。"""
 
+import time
 from pathlib import Path
 from typing import Iterator
 
@@ -43,6 +44,112 @@ from repositories.pages import (
 )
 from database import get_database_connection
 from repositories.documents import row_to_document
+
+
+LLM_TRANSIENT_MAX_ATTEMPTS = 4
+LLM_TRANSIENT_RETRY_DELAYS_SECONDS = [2.0, 5.0, 10.0]
+LECTURE_NOTES_MAX_ATTEMPTS = LLM_TRANSIENT_MAX_ATTEMPTS
+LECTURE_NOTES_RETRY_DELAYS_SECONDS = LLM_TRANSIENT_RETRY_DELAYS_SECONDS
+
+
+def strip_outer_markdown_fence(content: str) -> str:
+    """去掉 LLM 包住整段回答的 markdown 代码围栏。"""
+
+    stripped_content = content.strip()
+    for language in ("markdown", "md"):
+        opening_fence = f"```{language}"
+        if stripped_content.lower().startswith(opening_fence) and stripped_content.endswith("```"):
+            inner_content = stripped_content[len(opening_fence) : -3].strip()
+            return inner_content
+
+    if stripped_content.startswith("```") and stripped_content.endswith("```"):
+        inner_content = stripped_content[3:-3].strip()
+        if inner_content.startswith("#") or "\n#" in inner_content or "\n- " in inner_content:
+            return inner_content
+
+    return content.strip()
+
+
+def is_transient_llm_error(error: Exception) -> bool:
+    """判断 LLM 错误是否值得自动退避重试。"""
+
+    detail = str(error.detail if isinstance(error, HTTPException) else error).lower()
+    transient_markers = [
+        "http 429",
+        "engine_overloaded",
+        "overloaded",
+        "rate limit",
+        "too many requests",
+        "temporarily unavailable",
+        "timeout",
+        "请求超时",
+        "服务繁忙",
+        "稍后重试",
+    ]
+    return any(marker in detail for marker in transient_markers)
+
+
+def complete_lecture_notes_with_retries(client: LLMClient, prompt: str, image_path: Path) -> str:
+    """生成单页讲稿；临时过载时自动退避重试，最后降级到纯文本。"""
+
+    try:
+        return strip_outer_markdown_fence(
+            call_llm_with_retries(lambda: client.complete_with_image(prompt=prompt, image_path=image_path))
+        )
+    except Exception as error:
+        if not is_transient_llm_error(error):
+            raise
+        try:
+            return strip_outer_markdown_fence(call_llm_with_retries(lambda: client.complete_text(prompt)))
+        except Exception as fallback_error:
+            raise RuntimeError(
+                f"图文讲稿请求连续失败，纯文本兜底也失败：{fallback_error}"
+            ) from fallback_error
+
+
+def call_llm_with_retries(request_fn):
+    """对 Kimi 429/overloaded 等临时失败做统一退避重试。"""
+
+    last_error: Exception | None = None
+    for attempt in range(LLM_TRANSIENT_MAX_ATTEMPTS):
+        try:
+            return request_fn()
+        except Exception as error:
+            last_error = error
+            if not is_transient_llm_error(error) or attempt >= LLM_TRANSIENT_MAX_ATTEMPTS - 1:
+                raise
+            time.sleep(LLM_TRANSIENT_RETRY_DELAYS_SECONDS[attempt])
+
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("LLM 请求失败。")
+
+
+def answer_page_question_with_retries(client: LLMClient, prompt: str, image_inputs: list[tuple[Path, str]]) -> str:
+    """当前页问答：图文优先，临时过载后重试并降级纯文本。"""
+
+    if image_inputs:
+        try:
+            return call_llm_with_retries(lambda: client.complete_with_images(prompt, image_inputs))
+        except Exception as error:
+            if not is_transient_llm_error(error):
+                raise
+
+    return call_llm_with_retries(lambda: client.complete_text(prompt))
+
+
+def stream_page_question_with_retries(client: LLMClient, prompt: str, image_inputs: list[tuple[Path, str]]) -> Iterator[str]:
+    """当前页流式问答：图文流过载时降级到纯文本流。"""
+
+    if image_inputs:
+        try:
+            yield from client.stream_with_images(prompt, image_inputs)
+            return
+        except Exception as error:
+            if not is_transient_llm_error(error):
+                raise
+
+    yield from client.stream_text(prompt)
 
 
 def build_course_summary_input(document_id: str) -> tuple[dict[str, str | int | bool | None], str, bool]:
@@ -142,6 +249,8 @@ def build_lecture_notes_prompt(document, page) -> str:
 
 当前页提取文字：
 {page_text}
+
+输出要求：请直接输出 Markdown 内容，不要使用 ```markdown 或代码块包裹整段回答。
 """
 
 
@@ -322,14 +431,18 @@ def generate_single_page_lecture_notes(document, page) -> None:
         if not page["image_path"]:
             raise ValueError("当前页面还没有生成截图，无法生成讲稿。")
 
-        image_path = resolve_page_image_path(page["image_path"])
+        image_path = resolve_page_image_path(
+            page["image_path"],
+            document_id=document_id,
+            page_number=page_number,
+        )
         ensure_page_image_file_is_safe(image_path)
         if not image_path.exists():
             raise ValueError("页面截图文件不存在，可能已被手动删除。")
 
         prompt = build_lecture_notes_prompt(document=document, page=page)
         client = LLMClient(get_llm_config())
-        lecture_notes = client.complete_with_image(prompt=prompt, image_path=image_path)
+        lecture_notes = complete_lecture_notes_with_retries(client, prompt, image_path)
 
         update_page_lecture_notes_status(
             document_id=document_id,
@@ -433,10 +546,7 @@ def answer_page_question(
     )
     client = LLMClient(get_llm_config())
 
-    if image_inputs:
-        answer = client.complete_with_images(prompt, image_inputs)
-    else:
-        answer = client.complete_text(prompt)
+    answer = answer_page_question_with_retries(client, prompt, image_inputs)
 
     assistant_message = create_chat_message(
         page_id=page_id,
@@ -483,13 +593,8 @@ def stream_page_question(
     client = LLMClient(get_llm_config())
 
     try:
-        # 有本轮图片或历史图片时走图文流式请求，否则继续走纯文本流式请求。
-        answer_stream = (
-            client.stream_with_images(prompt, image_inputs)
-            if image_inputs
-            else client.stream_text(prompt)
-        )
-        for delta in answer_stream:
+        # 有本轮图片或历史图片时优先走图文流式请求；临时过载时降级纯文本流。
+        for delta in stream_page_question_with_retries(client, prompt, image_inputs):
             answer_parts.append(delta)
             yield {
                 "type": "delta",

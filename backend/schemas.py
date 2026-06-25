@@ -25,10 +25,11 @@ class LLMConfigUpdateRequest(BaseModel):
     model: str
     # timeout_seconds 是请求模型服务时最多等待的秒数。
     timeout_seconds: int
-    # 三个 prompt 为 None 时表示不修改旧 prompt。
+    # 四个 prompt 为 None 时表示不修改旧 prompt。
     course_summary_prompt: str | None = None
     lecture_notes_prompt: str | None = None
     page_chat_prompt: str | None = None
+    exam_generation_prompt: str | None = None
 
 
 class LLMTestRequest(BaseModel):
@@ -54,3 +55,28 @@ class NoteBlockPositionUpdateRequest(BaseModel):
     # width/height 是文字块宽高，单位是像素。
     width: float
     height: float
+
+
+class ExamAnswerRequest(BaseModel):
+    """提交答题记录的请求体。"""
+
+    # answers 是题目 ID 到用户答案的映射。
+    answers: dict[str, str]
+
+
+class ExamGenerateRequest(BaseModel):
+    """生成试卷的请求体。"""
+
+    # difficulty 控制试卷难度：easy / medium / hard
+    difficulty: str | None = "medium"
+
+
+class PhaseExamGenerateRequest(BaseModel):
+    """生成阶段考试的请求体。"""
+
+    # 参与阶段考试的文档 ID 列表
+    document_ids: list[str]
+    # 阶段考试名称
+    name: str
+    # 难度：easy / medium / hard
+    difficulty: str = "medium"

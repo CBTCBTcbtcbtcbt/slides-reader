@@ -172,6 +172,122 @@ def init_database() -> None:
             """
         )
 
+        # exams 表保存为某份文档生成的试卷。
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS exams (
+                id TEXT PRIMARY KEY,
+                document_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT,
+                status TEXT NOT NULL,
+                error_message TEXT,
+                total_score INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(document_id) REFERENCES documents(id)
+            )
+            """
+        )
+
+        # exam_questions 表保存试卷中的具体题目。
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS exam_questions (
+                id TEXT PRIMARY KEY,
+                exam_id TEXT NOT NULL,
+                question_number INTEGER NOT NULL,
+                section TEXT NOT NULL,
+                question_type TEXT NOT NULL,
+                score INTEGER NOT NULL,
+                content TEXT NOT NULL,
+                options TEXT,
+                answer TEXT,
+                explanation TEXT,
+                source_page INTEGER,
+                expected_type TEXT,
+                difficulty TEXT,
+                knowledge_tag TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(exam_id) REFERENCES exams(id)
+            )
+            """
+        )
+
+        # exam_attempts 表保存用户的答题记录。
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS exam_attempts (
+                id TEXT PRIMARY KEY,
+                exam_id TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+                score INTEGER,
+                answers TEXT NOT NULL,
+                FOREIGN KEY(exam_id) REFERENCES exams(id)
+            )
+            """
+        )
+
+        # wrong_questions 表保存用户答错的题目，用于错题本。
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS wrong_questions (
+                id TEXT PRIMARY KEY,
+                question_id TEXT NOT NULL,
+                exam_id TEXT NOT NULL,
+                attempt_id TEXT NOT NULL,
+                user_answer TEXT,
+                created_at TEXT NOT NULL,
+                reviewed INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY(question_id) REFERENCES exam_questions(id),
+                FOREIGN KEY(exam_id) REFERENCES exams(id),
+                FOREIGN KEY(attempt_id) REFERENCES exam_attempts(id)
+            )
+            """
+        )
+
+        # phase_exams 表保存综合多份课件的阶段考试。
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS phase_exams (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                document_ids TEXT NOT NULL,
+                difficulty TEXT NOT NULL,
+                exam_id TEXT,
+                status TEXT NOT NULL,
+                error_message TEXT,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+
+        # 为常用查询补充索引。
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_exams_document_id
+            ON exams(document_id)
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_exam_questions_exam_id
+            ON exam_questions(exam_id)
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_exam_attempts_exam_id
+            ON exam_attempts(exam_id)
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_wrong_questions_exam_id
+            ON wrong_questions(exam_id)
+            """
+        )
+
 
 def get_database_connection() -> sqlite3.Connection:
     """创建已经设置 row_factory 的 SQLite 连接。

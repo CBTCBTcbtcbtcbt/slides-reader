@@ -1,0 +1,169 @@
+.exam-take-view {
+  min-height: 100vh;
+  background: #f8f9fa;
+}
+
+.exam-take-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 24px;
+  background: #fff;
+  border-bottom: 1px solid #e8eaed;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.exam-take-header h2 {
+  margin: 0;
+  flex: 1;
+  font-size: 18px;
+  color: #1a1a2e;
+}
+
+.exam-progress {
+  font-size: 14px;
+  color: #666;
+}
+
+.exam-form {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.question-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.question-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.question-number {
+  font-weight: 700;
+  color: #4a90d9;
+}
+
+.question-type {
+  font-size: 12px;
+  padding: 3px 8px;
+  background: #eef4fb;
+  color: #4a90d9;
+  border-radius: 12px;
+}
+
+.question-score {
+  font-size: 13px;
+  color: #888;
+}
+
+.question-content {
+  margin: 0 0 16px;
+  font-size: 15px;
+  color: #333;
+  line-height: 1.6;
+}
+
+.choice-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.choice-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #e8eaed;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.choice-option:hover {
+  background: #f8f9fa;
+}
+
+.choice-option input {
+  margin-top: 2px;
+}
+
+.choice-option span {
+  flex: 1;
+  font-size: 14px;
+  color: #444;
+  line-height: 1.5;
+}
+
+.choice-letter {
+  display: inline;
+  margin-right: 6px;
+  color: #4a90d9;
+  font-weight: 700;
+}
+
+.fill-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.fill-input:focus {
+  outline: none;
+  border-color: #4a90d9;
+  box-shadow: 0 0 0 3px rgba(74, 144, 217, 0.15);
+}
+
+.exam-take-message {
+  margin: 16px 0;
+  padding: 12px 16px;
+  background: #ffebee;
+  color: #c62828;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.exam-submit-area {
+  display: flex;
+  justify-content: center;
+  margin-top: 24px;
+}
+
+.exam-submit-button {
+  padding: 14px 40px;
+  background: #4a90d9;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.exam-submit-button:hover:not(:disabled) {
+  background: #3a7bc8;
+}
+
+.exam-submit-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.exam-take-loading {
+  text-align: center;
+  padding: 80px;
+  color: #666;
+}
