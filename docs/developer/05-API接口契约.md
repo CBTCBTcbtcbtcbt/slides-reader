@@ -132,7 +132,7 @@ http://127.0.0.1:8000
 
 字段说明：
 
-- `kind`：第一版固定为 `image`。
+- `kind`：当前固定为 `image`。
 - `filename`：用户上传或粘贴图片时的原始文件名。
 - `mime_type`：后端根据文件头识别出的真实图片类型。
 - `file_url`：前端展示历史图片缩略图时使用。
@@ -201,7 +201,7 @@ POST /api/documents
 - `multipart/form-data`
 - 文件字段名：`file`
 - 只接受文件名后缀 `.pdf`、`.ppt` 或 `.pptx`
-- PPT/PPTX 会在后端通过 LibreOffice 转换为 PDF，后续存储和阅读都使用转换后的 PDF
+- PPT/PPTX 会在后端通过 LibreOffice 转换为 PDF，存储和阅读都使用转换后的 PDF
 
 成功状态码：`201`
 
@@ -716,7 +716,7 @@ POST /api/pages/{page_id}/chat
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `question` | text | 用户问题。 |
-| `attachments` | file | 可重复出现，第一版只支持 PNG、JPEG、WebP 图片。 |
+| `attachments` | file | 可重复出现，当前支持 PNG、JPEG、WebP 图片。 |
 
 限制：
 
@@ -753,7 +753,7 @@ POST /api/pages/{page_id}/chat
 重要行为：
 
 - 后端会先保存用户问题。
-- 如果后续 LLM 调用失败，用户问题和本轮图片附件仍然保留。
+- 如果 LLM 调用失败，用户问题和本轮图片附件仍然保留。
 - 构造 prompt 时会带上课程简介、当前页文字、当前页讲稿、最近问答历史和最新问题。
 - 最近问答历史最多取 `PAGE_CHAT_HISTORY_LIMIT = 20` 条。
 - 如果本轮上传图片，或同一页存在最近历史图片，会使用图文请求。

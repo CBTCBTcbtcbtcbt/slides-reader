@@ -34,7 +34,7 @@
 | `lecture_notes_prompt` | 逐页讲稿 prompt。 |
 | `page_chat_prompt` | 当前页问答 prompt。 |
 
-所有 LLM 配置都必须能通过 WebUI 修改。未来新增温度、最大输出长度、多模型路由等配置时，也应该同步加入后端配置接口和前端设置页。
+所有当前 LLM 配置都可以通过 WebUI 修改。环境变量只提供初始默认值，用户在 WebUI 保存后，数据库配置优先。
 
 ## LLMClient 请求格式
 
@@ -132,7 +132,7 @@ build_course_summary_prompt(document, pages_text, truncated)
 COURSE_SUMMARY_INPUT_LIMIT = 12000
 ```
 
-第一版用固定字符数截断，避免长 PDF 导致单次请求过大。后续如果需要更好效果，可以改为分页压缩、分段摘要或选择性页面输入。
+当前实现使用固定字符数截断，避免长 PDF 导致单次请求过大。
 
 成功后：
 
@@ -301,9 +301,9 @@ POST /api/pages/{page_id}/chat/stream
 
 如果没有配置 `base_url`、`api_key` 或 `model`，后端直接返回 `400`，不会发起外部请求。
 
-## Prompt 维护约定
+## Prompt 配置与展示
 
-`Prompt` 是发送给 LLM 的指令文本。项目中所有 prompt 都应该遵守：
+`Prompt` 是发送给 LLM 的指令文本。项目中的默认 prompt 遵守：
 
 - 明确要求 LLM 扮演老师。
 - 明确说明输出面向学生。
@@ -319,14 +319,3 @@ POST /api/pages/{page_id}/chat/stream
 - 展开后文本框直接完整显示全部内容。
 - 文本框内部不应该依赖滚动查看完整 prompt。
 - 再次点击同一个按钮后折叠。
-
-## 后续优化方向
-
-可以优先考虑：
-
-- 课程简介输入从固定截断改为分段压缩。
-- 逐页讲稿生成支持跳过低价值页面。
-- 不同任务使用不同模型，例如课程简介用大模型，问答用快模型。
-- 添加温度、最大 token、重试次数等 LLM 配置。
-- 为当前页问答增加是否自动带入当前页截图的开关。
-- 将 LLMClient 从 `urllib.request` 迁移到更易测试的 HTTP 客户端。

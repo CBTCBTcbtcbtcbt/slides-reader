@@ -1,258 +1,162 @@
 # Slides Reader
 
-Slides Reader 是一个本地单用户的 AI slides 阅读与授课工具。用户上传 PDF、PPT 或 PPTX slides 后，系统会统一转换或保存为 PDF，解析每页文字和截图，并调用 LLM 扮演老师生成课程简介、逐页讲稿，同时支持围绕当前页提问。
+Slides Reader 是一个在本机运行的 AI slides 阅读工具。你可以上传 PDF、PPT 或 PPTX 课件，应用会把课件整理成可阅读的 PDF 页面，并使用你配置的大语言模型生成课程简介、逐页讲稿、当前页答疑、试卷、错题本和阶段考试。
 
-这里的 `LLM` 是 `Large Language Model` 的缩写，中文通常叫“大语言模型”。本项目通过 OpenAI-compatible API 调用模型服务。
+`AI` 在这里指通过模型服务生成文字回答。`LLM` 是 `Large Language Model` 的缩写，中文通常叫“大语言模型”。本项目支持 OpenAI-compatible API，也就是接口格式兼容 OpenAI Chat Completions 的模型服务。
 
-## 当前能力
+## 你需要准备什么
 
-- PDF/PPT/PPTX 上传、本地保存、文档列表持久化；PPT/PPTX 会通过 LibreOffice 转换为 PDF。
-- SQLite 数据库保存文档、页面、讲稿文字块、问答历史和 LLM 配置。
-- PyMuPDF 解析 PDF 页数、每页文字和每页 PNG 截图。
-- WebUI 修改 LLM 服务地址、API Key、模型名、超时时间和 prompt。
-- 上传后自动生成课程简介。
-- 课程简介生成成功后自动逐页生成讲稿。
-- 支持暂停、继续、整份重新生成和单页重新生成讲稿。
-- PDF 阅读器、缩略图导航、课程简介侧栏、当前页问答侧栏。
-- 可拖动、可缩放并持久化的讲稿文字块。
-- 按页隔离并持久化的当前页问答。
-- 文档重命名和删除。
+运行源码版需要：
 
-## 技术栈
+- Python 3.11 或更新版本。
+- Node.js 20 或更新版本。
+- 一个可用的模型服务地址、API Key 和模型名。
+- 如果要上传 PPT 或 PPTX，需要安装 LibreOffice；只上传 PDF 时不需要。
 
-- 后端：`Python + FastAPI`
-- 数据库：`SQLite`
-- PDF 处理：`PyMuPDF`
-- PPT/PPTX 转 PDF：`LibreOffice`
-- LLM 调用：`OpenAI-compatible chat completions API`
-- 前端：`React + TypeScript + Vite`
-- PDF 前端渲染：`react-pdf`
+`Python` 用来启动后端程序。`Node.js` 和 `npm` 用来安装和构建网页界面。`LibreOffice` 是一个办公软件套件，本项目用它把 PPT/PPTX 转换成 PDF。
 
-`FastAPI` 是 Python Web 框架，用来编写 HTTP API。`SQLite` 是轻量级本地数据库，适合第一版本地单用户应用。`React` 用来构建网页界面，`TypeScript` 是带类型检查的 JavaScript，`Vite` 是前端开发服务器和构建工具。
+## Windows 启动
 
-## 开发者文档
-
-第一版任务文档已经迁移为长期开发者文档。后续开发请优先阅读：
-
-- [开发者文档入口](./docs/developer/README.md)
-- [项目总览](./docs/developer/01-项目总览.md)
-- [运行与开发环境](./docs/developer/02-运行与开发环境.md)
-- [后端架构](./docs/developer/03-后端架构.md)
-- [数据模型与状态机](./docs/developer/04-数据模型与状态机.md)
-- [API 接口契约](./docs/developer/05-API接口契约.md)
-- [LLM 工作流](./docs/developer/06-LLM工作流.md)
-- [前端架构](./docs/developer/07-前端架构.md)
-- [测试与验收](./docs/developer/08-测试与验收.md)
-- [后续开发路线](./docs/developer/09-后续开发路线.md)
-
-`docs/tasks/` 是初版任务拆解文档。确认新文档足够后，可以删除任务文档，后续上下文以 `docs/developer/` 为准。
-
-
-## 推荐启动方式：一个终端、一个网页地址
-
-项目根目录提供 `start.py`。默认启动流程会先构建前端，然后由 FastAPI 同时提供 API 和网页，所以只需要打开一个地址，不需要分别打开后端和 Vite 前端。
-
-第一次运行前先安装依赖。Linux/macOS：
-
-```bash
-cd backend
-python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
-cd ../frontend
-npm install
-cd ..
-```
-
-Windows PowerShell：
-
-```powershell
-cd backend
-python -m venv .venv
-.\.venv\Scripts\python.exe -m ensurepip --upgrade
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-cd ..\frontend
-npm install
-cd ..
-```
-
-以后启动只需要在项目根目录运行：
-
-```bash
-python3 start.py
-```
-
-Windows PowerShell：
+1. 打开项目文件夹。
+2. 在文件夹空白处按住 `Shift` 并点击鼠标右键。
+3. 选择“在终端中打开”或“在 PowerShell 中打开”。
+4. 在打开的窗口里运行：
 
 ```powershell
 python start.py
 ```
 
-启动成功后会自动打开浏览器。也可以只打印地址：
+第一次启动会自动创建后端虚拟环境、安装依赖、安装前端依赖并构建网页。这个过程可能需要几分钟。
 
-```powershell
-python start.py --no-open
-```
-
-排查环境问题：
-
-```powershell
-python start.py --diagnostics
-```
-
-启动成功后终端会显示唯一需要打开的地址：
+启动成功后会自动打开浏览器。如果没有自动打开，请在终端里找到这一行：
 
 ```text
 Open: http://localhost:8000/
 ```
 
-如果 `8000` 被占用，脚本会自动换到后续空闲端口。只打开 `Open:` 后面的地址即可。按 `Ctrl+C` 会停止服务。
+然后把 `Open:` 后面的地址复制到浏览器地址栏。
 
-也可以运行包装脚本：
+停止程序时，回到终端窗口，按：
 
-```bash
-./launch.sh
+```text
+Ctrl+C
 ```
 
-Windows：
+## macOS 或 Linux 启动
 
-```powershell
-.\launch.ps1
-```
-
-可选环境变量：
+在项目根目录运行：
 
 ```bash
-export LLM_BASE_URL=https://api.moonshot.cn/v1
-export LLM_API_KEY=你的_key
-export LLM_MODEL=moonshot-v1-8k
-export SLIDES_READER_STORAGE_DIR=/path/to/storage
 python3 start.py
 ```
 
-PPT/PPTX 上传需要安装 LibreOffice；只上传 PDF 时不需要。
+启动成功后浏览器会自动打开。如果没有自动打开，就复制终端中 `Open:` 后面的地址到浏览器。
 
-## 后端启动
+停止程序时，在终端按 `Ctrl+C`。
 
-进入后端目录：
+## 配置模型服务
 
-```powershell
-cd backend
-```
+第一次打开网页后，进入“设置”页面，填写：
 
-创建 Python 虚拟环境：
+- `Base URL`：模型服务地址，例如 `https://api.openai.com/v1`。
+- `API Key`：模型服务密钥。
+- `Model`：模型名。
+- `Timeout`：请求超时时间。
+- 各类 prompt：课程简介、逐页讲稿、当前页问答和试卷生成使用的指令文本。
 
-```powershell
-python -m venv .venv
-```
+`Prompt` 是发送给大语言模型的指令文本，用来告诉模型应该扮演什么角色、看哪些内容、输出什么格式。
 
-激活虚拟环境：
+保存设置后，可以点击测试连接，确认模型服务能正常回答。
 
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
+## 使用流程
 
-安装依赖：
+1. 启动应用并打开网页。
+2. 进入设置页，配置模型服务。
+3. 回到文件页，上传 PDF、PPT 或 PPTX。
+4. 等待课程简介和逐页讲稿生成。
+5. 点击阅读，查看课件、讲稿和当前页问答。
+6. 在文件页可以生成试卷。
+7. 在答题后可以查看结果和错题本。
+8. 可以选择多份课件创建阶段考试。
 
-```powershell
-pip install -r requirements.txt
-```
+上传 PPT/PPTX 时，如果系统找不到 LibreOffice，会提示转换失败。此时可以先安装 LibreOffice，再重新上传。
 
-启动 FastAPI 后端：
+## 常用命令
 
-```powershell
-uvicorn main:app --reload --host 127.0.0.1 --port 8000
-```
-
-健康检查：
-
-```text
-http://127.0.0.1:8000/api/health
-```
-
-## 前端启动
-
-进入前端目录：
+不自动打开浏览器：
 
 ```powershell
-cd frontend
+python start.py --no-open
 ```
 
-安装依赖：
+只检查环境，不启动服务：
 
 ```powershell
-npm install
+python start.py --diagnostics
 ```
 
-启动 Vite 前端：
+显示更详细的启动日志：
 
 ```powershell
-npm run dev
+python start.py --log-level DEBUG
 ```
 
-浏览器打开：
-
-```text
-http://localhost:5173
-```
-
-## Windows 一键启动
-
-项目根目录提供 PowerShell 启动脚本：
+指定端口：
 
 ```powershell
-.\launch.ps1
+python start.py --port 8010
 ```
 
-该脚本会分别启动开发模式服务：
+如果指定端口已经被占用，启动器会自动寻找后面的空闲端口。实际打开哪个地址，以终端里的 `Open:` 为准。
 
-- 后端：`http://127.0.0.1:8000`
-- 前端：`http://localhost:5173`
+## 日志和运行数据
 
-运行前需要先完成后端虚拟环境依赖安装和前端 `npm install`。
-PPT/PPTX 上传还需要 LibreOffice；如果本机没有安装，可以先运行：
-
-```powershell
-.\setup-env.ps1
-```
-
-这个脚本会优先复用本机 LibreOffice，找不到时会把 LibreOffice Portable 下载到项目的 `tools/libreoffice/` 目录。
-
-## 运行数据
-
-默认运行数据保存在：
+运行数据默认保存在：
 
 ```text
 storage/
 ```
 
-主要内容：
+这里包括数据库、上传后的 PDF、页面截图、聊天图片和日志。不要随意删除 `storage/`，否则历史文档和答题记录会丢失。
+
+日志默认保存在：
 
 ```text
-storage/app.db
-storage/documents/
-storage/pages/
+storage/logs/
 ```
 
-这些是运行时数据，不应作为源码提交。测试时可以用环境变量覆盖：
+常用日志文件：
+
+- `launcher.log`：启动器日志。
+- `backend-install.log`：后端依赖安装日志。
+- `frontend-install.log`：前端依赖安装日志。
+- `frontend-build.log`：前端构建日志。
+- `slides-reader.log`：后端服务和业务运行日志。
+- `diagnostics.txt`：环境诊断结果。
+
+启动失败时，优先运行：
 
 ```powershell
-$env:SLIDES_READER_STORAGE_DIR="C:\temp\slides-reader-storage"
+python start.py --diagnostics
 ```
 
-## 基础检查
+然后查看 `storage/logs/` 里的日志文件。
 
-后端语法检查：
+## Windows EXE
 
-```powershell
-cd backend
-.\.venv\Scripts\python.exe -m py_compile main.py
+如果项目目录里已经有 `SlidesReader.exe`，可以双击它启动。这个 exe 是轻量启动器，旁边仍然需要保留：
+
+```text
+backend/
+frontend/
+storage/
+README.md
 ```
 
-前端构建检查：
+也就是说，不要只复制单独的 `SlidesReader.exe`；它需要和项目文件夹一起使用。
 
-```powershell
-cd frontend
-npm run build
-```
+## 开发者文档
 
-更完整的测试和手动验收流程见 [测试与验收](./docs/developer/08-测试与验收.md)。
+如果你要修改代码、排查接口、理解数据库结构或重新打包 exe，请阅读：
+
+[开发者文档入口](./docs/developer/README.md)

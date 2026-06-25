@@ -1,8 +1,8 @@
 # Slides Reader 开发者文档
 
-这组文档是项目第一版完成后的长期开发上下文。后续如果删除 `docs/tasks/` 目录，应以这里的内容作为理解项目、扩展功能和排查问题的主要依据。
+本目录面向开发者，用来说明当前代码已经实现的结构、接口、状态流转、测试方式和启动器打包方式。根目录 `README.md` 面向普通用户，只说明如何启动和使用；开发细节统一放在这里。
 
-## 文档阅读顺序
+## 阅读顺序
 
 建议按下面顺序阅读：
 
@@ -14,76 +14,63 @@
 6. [LLM 工作流](./06-LLM工作流.md)
 7. [前端架构](./07-前端架构.md)
 8. [测试与验收](./08-测试与验收.md)
-9. [后续开发路线](./09-后续开发路线.md)
-10. [考试功能合并加固计划](./10-考试功能合并加固计划.md)
-11. [前端考试状态拆分与测试计划](./11-前端考试状态拆分与测试计划.md)
-12. [启动器日志与轻量 EXE 打包](./12-启动器日志与轻量EXE打包.md)
+9. [考试、错题本与阶段考试](./09-考试错题本与阶段考试.md)
+10. [启动器、日志与轻量 EXE](./10-启动器日志与轻量EXE.md)
 
-## 当前版本定位
+## 当前系统定位
 
-当前项目是一个本地单用户的 AI slides 阅读与授课工具。用户上传 PDF、PPT 或 PPTX slides 后，系统会完成以下流程：
+Slides Reader 是一个本地单用户 AI slides 阅读与授课工具。用户上传 PDF、PPT 或 PPTX 后，后端会统一保存或转换为 PDF，再解析每页文字和截图，并调用 OpenAI-compatible LLM 完成课程简介、逐页讲稿、当前页问答、试卷生成和阶段考试生成。
 
-1. 将上传文件统一保存或转换为系统实际使用的 PDF。
-2. 用 `PyMuPDF` 解析 PDF 页数和每页文字。
-3. 为每页渲染 PNG 截图。
-4. 使用 OpenAI-compatible LLM 生成课程简介。
-5. 在课程简介生成成功后，逐页生成老师讲稿。
-6. 在阅读器中展示系统实际使用的 PDF、页面缩略图、可拖动讲稿文字块、课程简介侧栏和当前页问答。
-7. 针对当前页保存独立问答历史。
-
-这里的 `LLM` 是 `Large Language Model` 的缩写，中文通常叫“大语言模型”。本项目中，LLM 的角色不是普通摘要工具，而是模拟老师讲课、解释知识点并回答学生问题。
+`LLM` 是 `Large Language Model` 的缩写，中文通常叫“大语言模型”。本项目中，LLM 的角色不是普通摘要工具，而是模拟老师讲课、解释知识点、围绕当前页回答问题，并根据课件生成练习题。
 
 ## 技术栈
 
 - 后端：`Python + FastAPI`
 - 数据库：`SQLite`
 - PDF 处理：`PyMuPDF`
+- PPT/PPTX 转 PDF：`LibreOffice`
 - LLM 调用：`OpenAI-compatible chat completions API`
 - 前端：`React + TypeScript + Vite`
-- PDF 前端渲染：`react-pdf` 和其底层依赖 `PDF.js`
+- PDF 前端渲染：`react-pdf` 和 `PDF.js`
+- 前端测试：`Vitest + Testing Library`
+- 后端测试：`pytest`
 
-`FastAPI` 是 Python Web 框架，用来编写 HTTP API。`SQLite` 是一个本地文件数据库，所有数据保存在单个 `.db` 文件中。`React` 是前端界面库，`TypeScript` 是带类型检查的 JavaScript，`Vite` 是前端开发服务器和打包工具。
+`FastAPI` 是 Python Web 框架。`SQLite` 是本地文件数据库。`React` 是前端界面库。`TypeScript` 是带类型检查的 JavaScript。`Vite` 是前端开发服务器和构建工具。
 
-## 重要设计原则
+## 已实现的主要能力
 
-- 上传的 PDF、页面截图和数据库都是运行数据，不是源码。
-- 所有 LLM 配置必须能通过 WebUI 修改，环境变量只作为第一次启动时的默认值来源。
-- API Key 不允许以明文返回给前端。
-- PDF 解析失败不能导致后端服务崩溃。
-- 课程简介失败不能破坏 PDF 页面记录。
-- 某一页讲稿失败不能影响其他页面继续生成或显示已有讲稿。
-- 当前页问答失败时，用户问题仍然要保存。
-- 逐页讲稿生成允许暂停和继续；暂停只阻止后续页面开始生成，已经发给 LLM 的当前请求会自然完成。
-- 讲稿文字块每页第一版只保留一个，位置和尺寸由前端拖动后保存到后端。
-- 前端 prompt 类设置默认折叠，展开后应完整显示全部 prompt 内容，不依赖文本框内部滚动查看。
+- 一键启动器 `start.py`：自动检查依赖、构建前端、启动 FastAPI、等待服务就绪并打开浏览器。
+- 统一日志目录 `storage/logs/`：记录启动器、依赖安装、前端构建、后端服务和诊断信息。
+- PDF/PPT/PPTX 上传：PPT/PPTX 通过 LibreOffice 转换成 PDF。
+- PDF 页面解析：使用 PyMuPDF 提取每页文字并渲染 PNG 截图。
+- 文档管理：列表、重命名、删除和生成状态轮询。
+- LLM 设置页：保存模型服务地址、API Key、模型名、超时时间和 prompt。
+- 课程简介生成：上传解析成功后自动生成，也支持手动重新生成。
+- 逐页讲稿生成：课程简介完成后自动逐页生成，支持暂停、继续、整份重新生成和单页重新生成。
+- 阅读器：PDF 阅读、缩略图导航、课程简介侧栏、当前页问答侧栏和可拖动讲稿文字块。
+- 当前页问答：支持按页保存历史，支持流式输出，支持用户上传或粘贴 PNG/JPEG/WebP 图片。
+- Markdown 和 LaTeX 渲染：统一使用安全的 Markdown 组件展示 LLM 输出和公式。
+- 普通试卷：基于单份课件生成试卷、答题、判分和删除。
+- 错题本：保存答错题目，支持标记已复习和移除。
+- 阶段考试：基于多份课件生成综合试卷，支持刷新、开始和删除。
+- 自动化测试：后端 API 契约测试、前端 hook 与组件测试。
 
-## 当前代码结构
+## 代码边界
+
+源码目录：
 
 ```text
-slides-reader/
-  backend/
-    main.py                 # 后端单文件入口，包含 API、数据库、PDF、LLM 和后台生成逻辑
-    requirements.txt        # 后端 Python 依赖
-  frontend/
-    src/
-      App.tsx               # 前端主要 React 组件，包含三个视图和全部核心状态
-      main.tsx              # React 挂载入口
-      styles.css            # 全局样式和阅读器布局
-    package.json            # 前端依赖和 npm scripts
-    vite.config.ts          # Vite 配置和 /api 代理
-  docs/
-    developer/              # 长期开发者文档
-    tasks/                  # 初版任务文档，可在迁移确认后删除
-  storage/                  # 运行数据目录，包含 PDF、截图和 SQLite 数据库
-  launch.ps1                # 一键启动前后端开发服务的 PowerShell 脚本
+backend/
+frontend/
+docs/
+start.py
+README.md
 ```
 
-## 第一版主要限制
+运行数据目录：
 
-- 后端集中在 `backend/main.py`，还没有拆分成模块。
-- 前端集中在 `frontend/src/App.tsx`，还没有拆分组件和 API 层。
-- 数据库直接使用 `sqlite3`，没有 ORM。`ORM` 是对象关系映射工具，可以把数据库表映射成代码里的类；当前项目为了简单没有使用。
-- 后台任务使用 `FastAPI BackgroundTasks`，适合本地开发和轻量任务，不适合多进程、多用户或长时间任务队列。
-- LLM 请求使用标准库 `urllib.request`，没有使用 OpenAI 官方 SDK。
-- LLM 输出按普通 Markdown 文本保存，前端当前主要以纯文本换行方式展示，还没有完整 Markdown 和 LaTeX 渲染。
-- PPT/PPTX 上传通过 LibreOffice 同步转换为 PDF，后续流程继续围绕 PDF。
+```text
+storage/
+```
+
+`storage/` 不是源码，包含 SQLite 数据库、上传后的 PDF、页面截图、聊天附件和日志。测试和临时运行可以通过 `SLIDES_READER_STORAGE_DIR` 指向其他目录，避免污染真实开发数据。
