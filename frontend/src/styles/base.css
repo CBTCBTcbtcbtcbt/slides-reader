@@ -28,13 +28,18 @@ body:has(.app-shell--reader) {
   overflow: hidden;
 }
 
+body:has(.reader-shell) {
+  overflow: hidden;
+}
+
 button,
 input,
 textarea {
   font: inherit;
 }
 
-.app-shell {
+.app-shell,
+.app-page {
   min-height: 100vh;
   display: grid;
   align-items: start;
@@ -52,7 +57,7 @@ textarea {
   width: min(1280px, 100%);
   padding: 32px;
   border: 1px solid #d8e0ed;
-  border-radius: 8px;
+  border-radius: 12px;
   background: #ffffff;
   box-shadow: 0 18px 45px rgb(27 31 42 / 10%);
 }
@@ -84,6 +89,10 @@ textarea {
 /* 顶部工具按钮同时服务阅读页、文件页和设置页。 */
 .topbar-button {
   min-height: 38px;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
   padding: 8px 14px;
   border: 1px solid #c7d2e3;
   border-radius: 8px;
@@ -140,13 +149,14 @@ textarea {
 
 h1 {
   margin: 0;
+  color: #111827;
   font-size: 32px;
   line-height: 1.2;
 }
 
 .description {
   margin: 16px 0 24px;
-  color: #566172;
+  color: #334155;
 }
 
 .connection-card {
@@ -159,14 +169,20 @@ h1 {
   background: #f8fafc;
 }
 
+.connection-card > div {
+  min-width: 0;
+}
+
 .connection-card strong {
   display: block;
   margin-bottom: 4px;
+  overflow-wrap: anywhere;
 }
 
 .connection-card p {
   margin: 0;
-  color: #647084;
+  color: #475569;
+  overflow-wrap: anywhere;
 }
 
 .status-dot {

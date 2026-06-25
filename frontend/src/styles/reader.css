@@ -47,7 +47,7 @@
     "chat";
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 8px;
-  padding: 8px;
+  padding: 8px 8px 8px 14px;
   overflow: hidden;
 }
 
@@ -64,7 +64,7 @@
   align-items: center;
   padding: 6px 10px;
   border: 1px solid #c8d3e2;
-  border-radius: 8px;
+  border-radius: 12px;
   background: #ffffff;
   box-shadow: 0 8px 22px rgb(27 31 42 / 10%);
 }
@@ -135,6 +135,7 @@
 .reader-title-group h1 {
   max-width: min(260px, 34vw);
   margin: 0;
+  color: #111827;
   overflow: hidden;
   overflow-wrap: anywhere;
   font-size: 18px;
@@ -152,7 +153,7 @@
 .reader-progress-text {
   min-width: 0;
   max-width: min(460px, 36vw);
-  color: #4d5b70;
+  color: #334155;
   font-size: 13px;
   font-weight: 700;
   overflow: hidden;
@@ -229,9 +230,13 @@
 .page-turn-button {
   min-width: 112px;
   min-height: 42px;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
   padding: 10px 18px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 9px;
   background: #2f5fbd;
   color: #ffffff;
   font-weight: 700;
@@ -303,7 +308,7 @@
   overflow: hidden;
   padding: 10px;
   border: 1px solid #ccd5e4;
-  border-radius: 8px;
+  border-radius: 12px;
   background: #eef3f9;
 }
 
@@ -320,18 +325,18 @@
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-columns: var(--thumbnail-sidebar-width, 158px) 12px minmax(0, 1fr);
+  grid-template-columns: minmax(28px, var(--thumbnail-sidebar-width, 158px)) 12px minmax(0, 1fr);
   gap: 16px;
   align-items: stretch;
 }
 
 .pdf-reader-content:has(.course-summary-sidebar) {
   grid-template-columns:
-    var(--thumbnail-sidebar-width, 158px)
+    minmax(28px, var(--thumbnail-sidebar-width, 158px))
     12px
     minmax(0, 1fr)
     12px
-    var(--course-summary-sidebar-width, 320px);
+    minmax(220px, var(--course-summary-sidebar-width, 320px));
 }
 
 .pdf-reader-content--resizing,
@@ -398,7 +403,7 @@
   gap: 10px;
   padding: 12px;
   border: 1px solid #ccd5e4;
-  border-radius: 8px;
+  border-radius: 12px;
   background: #ffffff;
 }
 
@@ -411,6 +416,7 @@
 
 .course-summary-sidebar__header h2 {
   margin: 0 0 6px;
+  color: #111827;
   font-size: 18px;
 }
 
@@ -422,10 +428,10 @@
   place-items: center;
   padding: 0;
   border: 1px solid #c7d2e3;
-  border-radius: 8px;
+  border-radius: 9px;
   background: #ffffff;
   color: #2f466d;
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 800;
   line-height: 1;
   cursor: pointer;
@@ -441,6 +447,11 @@
   overflow: auto;
   display: grid;
   gap: 10px;
+}
+
+.course-summary-close-button .app-icon {
+  width: 16px;
+  height: 16px;
 }
 
 .course-summary-sidebar--chat {
@@ -508,7 +519,7 @@
   justify-items: center;
   padding: 6px;
   border: 2px solid transparent;
-  border-radius: 8px;
+  border-radius: 10px;
   background: #ffffff;
   color: #50607a;
   font-size: 13px;
@@ -603,8 +614,8 @@
   min-height: 0;
   max-height: 260px;
   overflow: hidden;
-  border-color: #bfcce0;
-  background: rgb(251 252 255 / 98%);
+  border-color: #cbd5e1;
+  background: #ffffff;
   box-shadow: 0 -10px 26px rgb(27 31 42 / 12%);
 }
 
@@ -615,7 +626,7 @@
   align-items: center;
   padding: 6px 8px;
   border: 1px solid #bfcce0;
-  border-radius: 8px;
+  border-radius: 12px;
   background: #ffffff;
   color: #50607a;
   font-size: 13px;

@@ -1,9 +1,27 @@
+.files-dashboard {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  gap: 18px;
+  align-items: start;
+}
+
+.files-dashboard-main,
+.files-dashboard-sidebar {
+  min-width: 0;
+}
+
+.files-dashboard-sidebar {
+  display: grid;
+  gap: 16px;
+}
+
 .upload-panel {
   display: grid;
   gap: 16px;
-  margin-top: 24px;
-  padding-top: 24px;
-  border-top: 1px solid #e1e7f0;
+  padding: 16px;
+  border: 1px solid #d8e0ed;
+  border-radius: 12px;
+  background: #ffffff;
 }
 
 .upload-panel h2 {
@@ -35,6 +53,10 @@
 .upload-button {
   width: fit-content;
   min-width: 128px;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
   padding: 11px 18px;
   border: 0;
   border-radius: 8px;
@@ -87,9 +109,10 @@
 .documents-panel {
   display: grid;
   gap: 16px;
-  margin-top: 24px;
-  padding-top: 24px;
-  border-top: 1px solid #e1e7f0;
+  padding: 16px;
+  border: 1px solid #d8e0ed;
+  border-radius: 12px;
+  background: #ffffff;
 }
 
 .documents-panel h2 {
@@ -116,7 +139,7 @@
   gap: 12px;
   padding: 16px;
   border: 1px solid #d8e0ed;
-  border-radius: 8px;
+  border-radius: 12px;
   background: #fbfcff;
 }
 
@@ -320,6 +343,10 @@
   justify-content: flex-end;
 }
 
+.document-actions--compact {
+  flex: 0 0 auto;
+}
+
 .document-actions button {
   min-height: 34px;
   padding: 7px 12px;
@@ -329,6 +356,74 @@
   color: #ffffff;
   font-weight: 700;
   cursor: pointer;
+}
+
+.document-actions button,
+.secondary-action-button,
+.danger-button,
+.phase-exam-item-actions button,
+.exam-item-actions button {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  justify-content: center;
+}
+
+.primary-icon-button,
+.secondary-icon-button {
+  min-height: 38px;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 13px;
+  border-radius: 9px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.primary-icon-button {
+  border: 1px solid #2563eb;
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.secondary-icon-button {
+  border: 1px solid #c7d2e3;
+  background: #ffffff;
+  color: #2f466d;
+}
+
+.document-more-actions {
+  position: relative;
+}
+
+.document-more-actions summary {
+  list-style: none;
+}
+
+.document-more-actions summary::-webkit-details-marker {
+  display: none;
+}
+
+.document-more-actions__menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  width: min(230px, 80vw);
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #ccd5e4;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 18px 36px rgb(15 23 42 / 16%);
+}
+
+.document-more-actions__menu button {
+  width: 100%;
+  justify-content: flex-start;
 }
 
 .document-actions button:disabled {
@@ -505,9 +600,10 @@
 .phase-exams-panel {
   display: grid;
   gap: 16px;
-  margin-top: 24px;
-  padding-top: 24px;
-  border-top: 1px solid #e1e7f0;
+  padding: 16px;
+  border: 1px solid #d8e0ed;
+  border-radius: 12px;
+  background: #ffffff;
 }
 
 .phase-exams-panel-header {
@@ -537,13 +633,12 @@
 }
 
 .phase-exam-item {
-  display: flex;
+  display: grid;
   gap: 12px;
-  align-items: center;
-  justify-content: space-between;
+  align-items: start;
   padding: 14px 16px;
   border: 1px solid #d8e0ed;
-  border-radius: 8px;
+  border-radius: 12px;
   background: #fbfcff;
 }
 

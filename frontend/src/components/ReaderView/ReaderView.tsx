@@ -9,6 +9,7 @@ import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import type { DocumentItem, DocumentStatusResponse, PageItem } from "../../types/api";
 import type { DocumentActionState, LoadedPdfPage, ReaderRightSidebar, ReaderState } from "../../types/ui";
+import { AppIcon } from "../AppIcon";
 import { MarkdownContent } from "../MarkdownContent";
 
 // React-PDF 依赖 PDF.js worker 在浏览器后台解析 PDF。
@@ -155,6 +156,7 @@ export function ReaderView({
               className="topbar-button topbar-button--primary"
               onClick={onExpandTopbar}
             >
+              <AppIcon name="chevronRight" />
               展开顶部
             </button>
             <span className="reader-collapsed-title">{readerDocument.title}</span>
@@ -171,9 +173,11 @@ export function ReaderView({
                   className="topbar-button topbar-button--primary"
                   onClick={onCloseReader}
                 >
-                  文件
+                  <AppIcon name="archive" />
+                  课件库
                 </button>
                 <button type="button" className="topbar-button" onClick={onOpenSettings}>
+                  <AppIcon name="settings" />
                   设置
                 </button>
               </div>
@@ -207,18 +211,23 @@ export function ReaderView({
                 }}
                 disabled={!canRegenerateCurrentPageLectureNotes}
               >
+                <AppIcon name="refresh" />
                 {isRegeneratingCurrentPageLectureNotes ? "提交中..." : "重生成本页讲稿"}
               </button>
               <button type="button" className="topbar-button" onClick={onToggleNoteSidebar}>
+                <AppIcon name="book" />
                 {readerRightSidebar === "note" ? "收起讲稿" : "本页讲稿"}
               </button>
               <button type="button" className="topbar-button" onClick={onToggleCourseSummarySidebar}>
+                <AppIcon name="document" />
                 {readerRightSidebar === "summary" ? "收起简介" : "课程简介"}
               </button>
               <button type="button" className="topbar-button" onClick={onClearActiveDocument}>
+                <AppIcon name="close" />
                 关闭文档
               </button>
               <button type="button" className="topbar-button" onClick={onCollapseTopbar}>
+                <AppIcon name="chevronLeft" />
                 折叠顶部
               </button>
             </div>
@@ -368,7 +377,7 @@ export function ReaderView({
                             onClick={onCloseRightSidebar}
                             aria-label="关闭右侧栏"
                           >
-                            ×
+                            <AppIcon name="close" />
                           </button>
                         </div>
 
@@ -431,6 +440,7 @@ export function ReaderView({
               className="topbar-button topbar-button--primary"
               onClick={() => onSetReaderChatCollapsed(false)}
             >
+              <AppIcon name="message" />
               展开会话
             </button>
             <span>当前页问答：第 {currentPdfPage} 页</span>
@@ -448,6 +458,7 @@ export function ReaderView({
                   <span className="page-chat-page-badge">第 {currentReaderPage.page_number} 页</span>
                 ) : null}
                 <button type="button" className="topbar-button" onClick={onOpenChatSidebar}>
+                  <AppIcon name="message" />
                   移到右侧栏
                 </button>
                 <button
@@ -455,6 +466,7 @@ export function ReaderView({
                   className="topbar-button"
                   onClick={() => onSetReaderChatCollapsed(true)}
                 >
+                  <AppIcon name="chevronLeft" />
                   折叠会话
                 </button>
               </div>

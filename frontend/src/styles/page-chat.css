@@ -192,10 +192,15 @@
   display: grid;
   gap: 10px;
   padding: 10px 12px;
-  border: 1px solid #303030;
-  border-radius: 999px;
-  background: #242424;
+  border: 1px solid #cbd5e1;
+  border-radius: 18px;
+  background: #f8fafc;
   box-shadow: 0 12px 28px rgb(15 23 42 / 12%);
+}
+
+.page-chat-composer--light {
+  border-color: #cbd5e1;
+  background: #f8fafc;
 }
 
 .page-chat-composer-row {
@@ -220,7 +225,7 @@
   padding: 10px 4px;
   border: 0;
   border-radius: 0;
-  color: #f8fafc;
+  color: #111827;
   background: transparent;
   font-size: 18px;
   font-weight: 600;
@@ -229,7 +234,7 @@
 }
 
 .page-chat-input-label textarea::placeholder {
-  color: #b8b8b8;
+  color: #64748b;
 }
 
 .page-chat-input-label textarea:disabled {
@@ -252,17 +257,17 @@
   display: grid;
   place-items: center;
   border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: #ffffff;
-  font-size: 34px;
-  font-weight: 400;
+  border-radius: 12px;
+  background: #e8eef8;
+  color: #26364f;
+  font-size: 20px;
+  font-weight: 800;
   line-height: 1;
   cursor: pointer;
 }
 
 .page-chat-attach-button:hover {
-  background: #333333;
+  background: #dbe6f7;
 }
 
 .page-chat-attach-button input {
@@ -276,15 +281,15 @@
 }
 
 .page-chat-send-button {
-  width: 50px;
-  height: 50px;
+  width: 42px;
+  height: 42px;
   display: grid;
   place-items: center;
   padding: 0;
   border: 0;
-  border-radius: 999px;
-  background: #ffffff;
-  color: #111827;
+  border-radius: 13px;
+  background: #2563eb;
+  color: #ffffff;
   font-size: 28px;
   font-weight: 900;
   line-height: 1;
@@ -292,15 +297,17 @@
 }
 
 .page-chat-send-button:hover {
-  background: #f0f0f0;
+  background: #1d4ed8;
 }
 
 .page-chat-send-button__send-icon {
   display: block;
-  font-size: 28px;
-  font-weight: 900;
   line-height: 1;
-  transform: translateY(-1px);
+}
+
+.page-chat-send-button__send-icon .app-icon {
+  width: 20px;
+  height: 20px;
 }
 
 .page-chat-send-button__stop-icon {

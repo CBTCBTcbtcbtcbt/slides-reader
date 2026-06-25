@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Navigate,
   useLocation,
@@ -49,6 +49,8 @@ import type {
   LLMConfigUpdatePayload,
   PageItem,
 } from "./types/api";
+import { AppIcon } from "./components/AppIcon";
+import { AppShell, type AppShellSection } from "./components/AppShell/AppShell";
 const ReaderView = lazy(() =>
   import("./components/ReaderView/ReaderView").then((module) => ({ default: module.ReaderView })),
 );
@@ -854,6 +856,16 @@ function App() {
     navigate(SETTINGS_ROUTE);
   }
 
+  function openWrongBook() {
+    // 进入错题本前沿用原来的加载逻辑，保证页面打开时数据已经开始刷新。
+    void loadWrongQuestions();
+    navigate(WRONG_BOOK_ROUTE);
+  }
+
+  function openPhaseExamCreate() {
+    navigate(PHASE_EXAM_CREATE_ROUTE);
+  }
+
   function returnToReader() {
     if (!activeReaderDocument) {
       return;
@@ -865,6 +877,40 @@ function App() {
   function clearActiveDocument() {
     resetReaderState();
     navigate(FILES_ROUTE);
+  }
+
+  function resolveShellSection(): AppShellSection {
+    // AppShell 只关心一级导航高亮，具体路由仍由 React Router 和现有条件分支负责。
+    if (isReaderRoute) {
+      return "reader";
+    }
+    if (isSettingsRoute) {
+      return "settings";
+    }
+    if (isWrongBookRoute) {
+      return "wrongBook";
+    }
+    if (isExamTakeRoute || isExamResultRoute || isPhaseExamCreateRoute) {
+      return "phaseExam";
+    }
+    return "files";
+  }
+
+  function renderInShell(children: ReactNode) {
+    // 所有页面共用同一个左侧应用壳，不改变页面内部的业务 props。
+    return (
+      <AppShell
+        activeSection={resolveShellSection()}
+        canReturnToReader={Boolean(activeReaderDocument)}
+        onNavigateFiles={closeReader}
+        onNavigateReader={returnToReader}
+        onNavigateWrongBook={openWrongBook}
+        onNavigatePhaseExam={openPhaseExamCreate}
+        onNavigateSettings={openSettings}
+      >
+        {children}
+      </AppShell>
+    );
   }
 
   function toggleCourseSummarySidebar() {
@@ -1754,6 +1800,7 @@ function App() {
           onClick={() => turnPdfPage(-1)}
           disabled={currentPdfPage <= 1 || totalPdfPages <= 0}
         >
+          <AppIcon name="chevronLeft" />
           上一页
         </button>
         <span className="pdf-page-indicator">
@@ -1789,6 +1836,7 @@ function App() {
           disabled={totalPdfPages <= 0 || currentPdfPage >= totalPdfPages}
         >
           下一页
+          <AppIcon name="chevronRight" />
         </button>
       </div>
     );
@@ -1823,10 +1871,10 @@ function App() {
       />
     ) : null;
 
-    return (
+    return renderInShell(
       <Suspense
         fallback={
-          <main className="app-shell app-shell--files">
+          <main className="app-page app-page--status">
             <section className="status-panel app-page-panel">
               <p className="eyebrow">Slides Reader</p>
               <h1>正在加载阅读器...</h1>
@@ -1902,7 +1950,7 @@ function App() {
   }
 
   if (isExamTakeRoute && routeExamId) {
-    return (
+    return renderInShell(
       <ExamTakeView
         examId={routeExamId}
         title={currentExam?.title ?? "考试答题"}
@@ -1918,8 +1966,8 @@ function App() {
 
   if (isExamResultRoute && routeExamId) {
     if (examTakeLoading && !currentExamResult) {
-      return (
-        <main className="app-shell app-shell--files">
+      return renderInShell(
+        <main className="app-page app-page--status">
           <section className="status-panel app-page-panel">
             <p className="eyebrow">Slides Reader</p>
             <h1>正在加载考试结果...</h1>
@@ -1930,8 +1978,8 @@ function App() {
     }
 
     if (!currentExamResult) {
-      return (
-        <main className="app-shell app-shell--files">
+      return renderInShell(
+        <main className="app-page app-page--status">
           <section className="status-panel app-page-panel">
             <p className="eyebrow">Slides Reader</p>
             <h1>考试结果不可用</h1>
@@ -1946,7 +1994,7 @@ function App() {
       );
     }
 
-    return (
+    return renderInShell(
       <ExamResultView
         result={currentExamResult}
         questions={currentExamResult.questions}
@@ -1962,7 +2010,7 @@ function App() {
       ? documents.find((document) => document.document_id === wrongBookDocumentId)
       : undefined;
 
-    return (
+    return renderInShell(
       <WrongBookView
         wrongQuestions={wrongQuestions}
         documentId={wrongBookDocumentId ?? undefined}
@@ -1975,7 +2023,7 @@ function App() {
   }
 
   if (isPhaseExamCreateRoute) {
-    return (
+    return renderInShell(
       <PhaseExamCreateView
         documents={documents}
         onBack={() => navigate(FILES_ROUTE)}
@@ -1992,62 +2040,27 @@ function App() {
       : documents.find((document) => document.document_id === activeReaderDocument.document_id) ??
         activeReaderDocument;
 
-  return (
-    <main className={`app-shell app-shell--${visibleView}`}>
+  return renderInShell(
+    <main className={`app-page app-page--${visibleView}`}>
       <section className="status-panel app-page-panel">
         <header className="app-page-header">
           <div>
             <p className="eyebrow">Slides Reader</p>
-            <h1>{visibleView === "settings" ? "设置" : "文件"}</h1>
+            <h1>{visibleView === "settings" ? "设置" : "课件库"}</h1>
             <p className="description">
               {visibleView === "settings"
                 ? "配置 OpenAI-compatible LLM，用于课程简介、逐页讲稿和当前页问答。"
-                : "上传、选择、重命名或删除 slides 文件。"}
+                : "管理 slides、继续阅读、查看 AI 生成进度。"}
             </p>
           </div>
-          <div className="app-page-actions">
-            <button
-              type="button"
-              className={`topbar-button${visibleView === "files" ? " topbar-button--primary" : ""}`}
-              onClick={closeReader}
-            >
-              文件
-            </button>
-            <button
-              type="button"
-              className={`topbar-button${
-                visibleView === "settings" ? " topbar-button--primary" : ""
-              }`}
-              onClick={openSettings}
-            >
-              设置
-            </button>
-            <button
-              type="button"
-              className="topbar-button"
-              onClick={returnToReader}
-              disabled={!activeReaderDocument}
-            >
-              返回阅读
-            </button>
-            <button
-              type="button"
-              className="topbar-button"
-              onClick={() => {
-                void loadWrongQuestions();
-                navigate(WRONG_BOOK_ROUTE);
-              }}
-            >
-              错题本
-            </button>
-            <button
-              type="button"
-              className="topbar-button"
-              onClick={() => navigate(PHASE_EXAM_CREATE_ROUTE)}
-            >
-              阶段考试
-            </button>
-          </div>
+          {visibleView === "files" && activeReaderDocument ? (
+            <div className="app-page-actions">
+              <button type="button" className="topbar-button topbar-button--primary" onClick={returnToReader}>
+                <AppIcon name="book" />
+                返回阅读
+              </button>
+            </div>
+          ) : null}
         </header>
 
         <div className={`connection-card connection-card--${connectionState}`}>
@@ -2207,7 +2220,7 @@ function App() {
           />
         ) : null}
       </section>
-    </main>
+    </main>,
   );
 }
 

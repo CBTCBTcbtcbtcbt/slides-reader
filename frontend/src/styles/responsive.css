@@ -1,4 +1,24 @@
 @media (max-width: 920px) {
+  .app-shell-layout {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .app-shell-layout--collapsed {
+    grid-template-columns: 0 minmax(0, 1fr);
+  }
+
+  .app-shell-rail {
+    padding: 14px 8px;
+  }
+
+  .app-shell-nav-button {
+    width: 56px;
+  }
+
+  .files-dashboard {
+    grid-template-columns: 1fr;
+  }
+
   .reader-topbar {
     grid-template-columns: 1fr;
   }
@@ -75,7 +95,8 @@
 }
 
 @media (max-width: 560px) {
-  .app-shell {
+  .app-shell,
+  .app-page {
     padding: 12px;
   }
 
@@ -92,13 +113,31 @@
     justify-content: flex-start;
   }
 
-  .app-shell--reader {
+  .app-shell--reader,
+  .app-page--reader {
     padding: 0;
+  }
+
+  .app-shell-layout {
+    grid-template-columns: 0 minmax(0, 1fr);
+  }
+
+  .app-shell-layout:not(.app-shell-layout--collapsed) {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+
+  .app-shell-collapse-tab {
+    right: -18px;
+  }
+
+  .app-shell-collapse-tab--collapsed {
+    left: 0;
+    right: auto;
   }
 
   .reader-shell {
     gap: 6px;
-    padding: 6px;
+    padding: 6px 6px 6px 14px;
   }
 
   .reader-topbar,

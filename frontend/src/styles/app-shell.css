@@ -1,0 +1,158 @@
+.app-icon {
+  width: 1em;
+  height: 1em;
+  display: block;
+  flex: 0 0 auto;
+  fill: currentColor;
+}
+
+.app-shell-layout {
+  width: 100%;
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  background: #eef2f7;
+}
+
+.app-shell-layout--collapsed {
+  grid-template-columns: 0 minmax(0, 1fr);
+}
+
+.app-shell-rail {
+  position: relative;
+  z-index: 60;
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 22px;
+  padding: 18px 12px;
+  background: #172033;
+  color: #cbd5e1;
+}
+
+.app-shell-layout--collapsed .app-shell-rail {
+  width: 0;
+  min-height: 100vh;
+  padding: 0;
+  background: transparent;
+}
+
+.app-shell-brand {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #172033;
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.app-shell-layout--collapsed .app-shell-brand,
+.app-shell-layout--collapsed .app-shell-nav {
+  display: none;
+}
+
+.app-shell-nav {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.app-shell-nav-button {
+  position: relative;
+  width: 64px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: #cbd5e1;
+  cursor: pointer;
+}
+
+.app-shell-nav-button .app-icon {
+  width: 24px;
+  height: 24px;
+}
+
+.app-shell-nav-button > span {
+  position: absolute;
+  left: 72px;
+  max-width: 160px;
+  padding: 6px 9px;
+  border-radius: 7px;
+  background: #111827;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-6px);
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s ease;
+  white-space: nowrap;
+}
+
+.app-shell-nav-button:hover:not(:disabled) > span,
+.app-shell-nav-button:focus-visible > span {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.app-shell-nav-button:hover:not(:disabled) {
+  background: rgb(255 255 255 / 10%);
+  color: #ffffff;
+}
+
+.app-shell-nav-button--active {
+  background: #ffffff;
+  color: #111827;
+  box-shadow: 0 10px 22px rgb(0 0 0 / 22%);
+}
+
+.app-shell-nav-button:disabled {
+  color: #6f7c91;
+  cursor: not-allowed;
+}
+
+.app-shell-collapse-tab {
+  position: absolute;
+  top: 50%;
+  right: -18px;
+  width: 30px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  padding: 0 4px 0 0;
+  border: 1px solid #26344f;
+  border-left: 0;
+  border-radius: 0 999px 999px 0;
+  background: #172033;
+  color: #ffffff;
+  box-shadow: 0 12px 26px rgb(15 23 42 / 28%);
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.app-shell-collapse-tab--collapsed {
+  left: 0;
+  right: auto;
+  width: 28px;
+  height: 58px;
+}
+
+.app-shell-collapse-tab .app-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.app-shell-content {
+  min-width: 0;
+  min-height: 100vh;
+}

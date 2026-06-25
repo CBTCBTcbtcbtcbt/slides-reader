@@ -6,6 +6,7 @@ import type {
   PhaseExamItem,
 } from "../../types/api";
 import type { DocumentActionState, UploadState } from "../../types/ui";
+import { AppIcon } from "../AppIcon";
 import { MarkdownContent } from "../MarkdownContent";
 
 type FilesViewProps = {
@@ -122,50 +123,11 @@ export function FilesView({
   buildLectureNotesProgressText,
 }: FilesViewProps) {
   return (
-    <>
-      <div className="current-document-banner">
-        <span>当前打开</span>
-        <strong>{currentOpenedDocument ? currentOpenedDocument.title : "未打开文档"}</strong>
-        {currentOpenedDocument ? (
-          <button type="button" className="secondary-action-button" onClick={onReturnToReader}>
-            返回阅读
-          </button>
-        ) : null}
-      </div>
-
-      <form className="upload-panel" onSubmit={onUploadSubmit}>
+    <div className="files-dashboard">
+      <section className="documents-panel files-dashboard-main">
         <div>
-          <h2>上传 slides</h2>
-          <p>请选择 `.pdf`、`.ppt` 或 `.pptx` 格式文件。上传成功后，后端会统一转换并使用 PDF。</p>
-        </div>
-
-        <label className="file-input-label">
-          <span>选择 slides 文件</span>
-          <input type="file" accept="application/pdf,.pdf,.ppt,.pptx" onChange={onFileChange} />
-        </label>
-
-        <button
-          className="upload-button"
-          type="submit"
-          disabled={!selectedFile || uploadState === "uploading"}
-        >
-          {uploadState === "uploading" ? "上传中..." : "上传 slides"}
-        </button>
-
-        <div className={`upload-message upload-message--${uploadState}`}>{uploadMessage}</div>
-
-        {uploadedDocumentId ? (
-          <div className="document-id-box">
-            <span>document_id</span>
-            <code>{uploadedDocumentId}</code>
-          </div>
-        ) : null}
-      </form>
-
-      <section className="documents-panel">
-        <div>
-          <h2>已上传文档</h2>
-          <p>这些记录来自 SQLite 数据库，后端重启后仍然会保留。</p>
+          <h2>课件列表</h2>
+          <p>选择一份课件继续阅读；低频操作已收进“更多操作”。</p>
         </div>
 
         {documents.length > 0 ? (
@@ -228,84 +190,87 @@ export function FilesView({
                         <span>{formatCreatedAt(document.created_at)}</span>
                       </div>
                     )}
-                    <div className="document-actions">
+                    <div className="document-actions document-actions--compact">
                       <button
                         type="button"
-                        className={`lecture-notes-toggle-button${
-                          isLectureNotesPaused ? " lecture-notes-toggle-button--resume" : ""
-                        }`}
-                        onClick={() => onToggleDocumentLectureNotesPaused(document)}
-                        disabled={
-                          isDocumentBusy(document.document_id) ||
-                          document.course_summary_status !== "ready" ||
-                          !document.course_summary
-                        }
-                        aria-label={lectureNotesToggleLabel}
-                        title={lectureNotesToggleLabel}
-                      >
-                        <span
-                          className={`lecture-notes-toggle-button__icon${
-                            isLectureNotesPaused ? " lecture-notes-toggle-button__icon--resume" : ""
-                          }`}
-                          aria-hidden="true"
-                        />
-                      </button>
-                      <button
-                        type="button"
+                        className="primary-icon-button"
                         onClick={() => onOpenReader(document)}
                         disabled={isDocumentBusy(document.document_id) || document.page_count <= 0}
                       >
-                        阅读 slides
+                        <AppIcon name="book" />
+                        阅读
                       </button>
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={() => onStartRename(document)}
-                        disabled={isDocumentBusy(document.document_id)}
-                      >
-                        重命名
-                      </button>
-                      <button
-                        type="button"
-                        className="danger-button"
-                        onClick={() => onDeleteDocument(document)}
-                        disabled={isDocumentBusy(document.document_id)}
-                      >
-                        {documentActionState?.documentId === document.document_id &&
-                        documentActionState.action === "deleting"
-                          ? "删除中..."
-                          : "删除"}
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={() => onGenerateExam(document)}
-                        disabled={
-                          isDocumentBusy(document.document_id) ||
-                          document.course_summary_status !== "ready" ||
-                          !document.course_summary
-                        }
-                      >
-                        {documentActionState?.documentId === document.document_id &&
-                        documentActionState.action === "generatingExam"
-                          ? "提交中..."
-                          : "生成试卷"}
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={() => onViewWrongBook(document)}
-                      >
-                        错题本
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={() => onToggleDocumentExpanded(document.document_id)}
-                        disabled={isDocumentBusy(document.document_id)}
-                      >
-                        {isDocumentExpanded ? "收起" : "展开"}
-                      </button>
+                      <details className="document-more-actions">
+                        <summary className="secondary-icon-button">
+                          <AppIcon name="more" />
+                          更多
+                        </summary>
+                        <div className="document-more-actions__menu">
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => onStartRename(document)}
+                            disabled={isDocumentBusy(document.document_id)}
+                          >
+                            重命名
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => onGenerateExam(document)}
+                            disabled={
+                              isDocumentBusy(document.document_id) ||
+                              document.course_summary_status !== "ready" ||
+                              !document.course_summary
+                            }
+                          >
+                            {documentActionState?.documentId === document.document_id &&
+                            documentActionState.action === "generatingExam"
+                              ? "提交中..."
+                              : "生成试卷"}
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => onViewWrongBook(document)}
+                          >
+                            错题本
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => onToggleDocumentExpanded(document.document_id)}
+                            disabled={isDocumentBusy(document.document_id)}
+                          >
+                            {isDocumentExpanded ? "收起详情" : "展开详情"}
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => onToggleDocumentLectureNotesPaused(document)}
+                            disabled={
+                              isDocumentBusy(document.document_id) ||
+                              document.course_summary_status !== "ready" ||
+                              !document.course_summary
+                            }
+                          >
+                            <AppIcon name={isLectureNotesPaused ? "play" : "pause"} />
+                            {lectureNotesToggleLabel}
+                          </button>
+                          <button
+                            type="button"
+                            className="danger-button"
+                            onClick={() => onDeleteDocument(document)}
+                            disabled={isDocumentBusy(document.document_id)}
+                          >
+                            <AppIcon name="trash" />
+                            {documentActionState?.documentId === document.document_id &&
+                            documentActionState.action === "deleting"
+                              ? "删除中..."
+                              : "删除"}
+                          </button>
+                        </div>
+                      </details>
                     </div>
                   </div>
 
@@ -628,69 +593,113 @@ export function FilesView({
         ) : null}
       </section>
 
-      <section className="phase-exams-panel">
-        <div className="phase-exams-panel-header">
-          <div>
-            <h2>阶段考试</h2>
-            <p>阶段考试综合多份课件内容生成，与文档平级管理。</p>
-          </div>
-          <button
-            type="button"
-            className="secondary-action-button"
-            onClick={onRefreshPhaseExams}
-            disabled={phaseExamsLoading}
-          >
-            {phaseExamsLoading ? "刷新中..." : "刷新列表"}
-          </button>
+      <aside className="files-dashboard-sidebar">
+        <div className="current-document-banner">
+          <span>当前打开</span>
+          <strong>{currentOpenedDocument ? currentOpenedDocument.title : "未打开文档"}</strong>
+          {currentOpenedDocument ? (
+            <button type="button" className="secondary-action-button" onClick={onReturnToReader}>
+              <AppIcon name="book" />
+              返回阅读
+            </button>
+          ) : null}
         </div>
 
-        {phaseExamsLoading && phaseExams.length === 0 ? (
-          <p>正在加载阶段考试列表...</p>
-        ) : phaseExams.length > 0 ? (
-          <ul className="phase-exam-list">
-            {phaseExams.map((phaseExam) => (
-              <li
-                key={phaseExam.id}
-                className={`phase-exam-item phase-exam-item--${phaseExam.status}`}
-              >
-                <div className="phase-exam-item-info">
-                  <strong>{phaseExam.name}</strong>
-                  <span className="phase-exam-item-status">{phaseExam.status}</span>
-                  <span className="phase-exam-item-difficulty">难度：{phaseExam.difficulty}</span>
-                  {phaseExam.status === "ready" && phaseExam.exam_id ? (
-                    <span className="phase-exam-item-ready">已可开始考试</span>
-                  ) : null}
-                  {phaseExam.error_message ? (
-                    <p className="document-error">{phaseExam.error_message}</p>
-                  ) : null}
-                </div>
-                <div className="phase-exam-item-actions">
-                  <button
-                    type="button"
-                    className="secondary-action-button"
-                    onClick={() => onTakePhaseExam(phaseExam)}
-                    disabled={phaseExam.status !== "ready" || !phaseExam.exam_id}
-                  >
-                    {phaseExam.status === "ready" ? "开始考试" : "生成中..."}
-                  </button>
-                  <button
-                    type="button"
-                    className="danger-button"
-                    onClick={() => onDeletePhaseExam(phaseExam)}
-                    disabled={phaseExamsLoading}
-                  >
-                    删除
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="phase-exams-empty">
-            暂无阶段考试。点击顶部“阶段考试”按钮创建一份综合测试卷。
-          </p>
-        )}
-      </section>
-    </>
+        <form className="upload-panel" onSubmit={onUploadSubmit}>
+          <div>
+            <h2>上传 slides</h2>
+            <p>请选择 `.pdf`、`.ppt` 或 `.pptx` 格式文件。上传成功后，后端会统一转换并使用 PDF。</p>
+          </div>
+
+          <label className="file-input-label">
+            <span>选择 slides 文件</span>
+            <input type="file" accept="application/pdf,.pdf,.ppt,.pptx" onChange={onFileChange} />
+          </label>
+
+          <button
+            className="upload-button"
+            type="submit"
+            disabled={!selectedFile || uploadState === "uploading"}
+          >
+            <AppIcon name="upload" />
+            {uploadState === "uploading" ? "上传中..." : "上传 slides"}
+          </button>
+
+          <div className={`upload-message upload-message--${uploadState}`}>{uploadMessage}</div>
+
+          {uploadedDocumentId ? (
+            <div className="document-id-box">
+              <span>document_id</span>
+              <code>{uploadedDocumentId}</code>
+            </div>
+          ) : null}
+        </form>
+
+        <section className="phase-exams-panel">
+          <div className="phase-exams-panel-header">
+            <div>
+              <h2>阶段考试</h2>
+              <p>综合多份课件生成测试卷。</p>
+            </div>
+            <button
+              type="button"
+              className="secondary-action-button"
+              onClick={onRefreshPhaseExams}
+              disabled={phaseExamsLoading}
+            >
+              <AppIcon name="refresh" />
+              {phaseExamsLoading ? "刷新中..." : "刷新"}
+            </button>
+          </div>
+
+          {phaseExamsLoading && phaseExams.length === 0 ? (
+            <p>正在加载阶段考试列表...</p>
+          ) : phaseExams.length > 0 ? (
+            <ul className="phase-exam-list">
+              {phaseExams.map((phaseExam) => (
+                <li
+                  key={phaseExam.id}
+                  className={`phase-exam-item phase-exam-item--${phaseExam.status}`}
+                >
+                  <div className="phase-exam-item-info">
+                    <strong>{phaseExam.name}</strong>
+                    <span className="phase-exam-item-status">{phaseExam.status}</span>
+                    <span className="phase-exam-item-difficulty">难度：{phaseExam.difficulty}</span>
+                    {phaseExam.status === "ready" && phaseExam.exam_id ? (
+                      <span className="phase-exam-item-ready">已可开始考试</span>
+                    ) : null}
+                    {phaseExam.error_message ? (
+                      <p className="document-error">{phaseExam.error_message}</p>
+                    ) : null}
+                  </div>
+                  <div className="phase-exam-item-actions">
+                    <button
+                      type="button"
+                      className="secondary-action-button"
+                      onClick={() => onTakePhaseExam(phaseExam)}
+                      disabled={phaseExam.status !== "ready" || !phaseExam.exam_id}
+                    >
+                      {phaseExam.status === "ready" ? "开始考试" : "生成中..."}
+                    </button>
+                    <button
+                      type="button"
+                      className="danger-button"
+                      onClick={() => onDeletePhaseExam(phaseExam)}
+                      disabled={phaseExamsLoading}
+                    >
+                      删除
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="phase-exams-empty">
+              暂无阶段考试。点击左侧“考试”按钮创建一份综合测试卷。
+            </p>
+          )}
+        </section>
+      </aside>
+    </div>
   );
 }

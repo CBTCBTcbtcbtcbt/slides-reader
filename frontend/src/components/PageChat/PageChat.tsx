@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChatAttachmentItem, ChatMessageItem, PageItem } from "../../types/api";
 import type { PendingChatAttachment } from "../../types/ui";
+import { AppIcon } from "../AppIcon";
 import { MarkdownContent } from "../MarkdownContent";
 
 const PAGE_CHAT_MAX_ATTACHMENTS = 4;
@@ -166,7 +167,7 @@ export function PageChatContent({
           onSubmitPageQuestion(currentReaderPage);
         }}
       >
-        <div className="page-chat-composer" aria-label="当前页问答输入区">
+        <div className="page-chat-composer page-chat-composer--light" aria-label="当前页问答输入区">
           {pendingAttachments.length > 0 ? (
             <div className="page-chat-pending-attachments" aria-label="待发送图片">
               {pendingAttachments.map((attachment) => (
@@ -195,7 +196,7 @@ export function PageChatContent({
               }`}
               title="添加图片"
             >
-              <span aria-hidden="true">+</span>
+              <AppIcon name="upload" />
               <input
                 type="file"
                 accept="image/png,image/jpeg,image/webp"
@@ -234,7 +235,7 @@ export function PageChatContent({
                 }
                 aria-hidden="true"
               >
-                {isSubmittingCurrentPageChat ? "" : "↑"}
+                {isSubmittingCurrentPageChat ? null : <AppIcon name="send" />}
               </span>
             </button>
           </div>
