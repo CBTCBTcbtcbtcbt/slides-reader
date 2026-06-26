@@ -1,3 +1,4 @@
+import { AppIcon } from "../AppIcon";
 import type { ExamAttemptResult, ExamQuestionItem } from "../../types/api";
 import "./ExamResultView.css";
 
@@ -24,8 +25,9 @@ export function ExamResultView({
   return (
     <div className="exam-result-view">
       <header className="exam-result-header">
-        <button className="back-button" onClick={onBack}>
-          ← 返回
+        <button type="button" className="page-back-button" onClick={onBack}>
+          <AppIcon name="chevronLeft" />
+          返回
         </button>
         <h2>考试结果</h2>
         <button className="retry-button" onClick={onRetry}>

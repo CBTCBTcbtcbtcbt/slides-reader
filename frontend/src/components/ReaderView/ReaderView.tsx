@@ -234,21 +234,11 @@ export function ReaderView({
           </header>
         )}
 
-        {readerMessage || activeDocumentStatus?.course_summary_error ? (
+        {readerMessage ? (
           <div className="reader-status-stack">
-            {readerMessage ? (
-              <p className={`pdf-reader-message pdf-reader-message--${readerState}`}>
-                {readerMessage}
-              </p>
-            ) : null}
-
-            {activeDocumentStatus?.course_summary_error ? (
-              <div className="reader-generation-strip">
-                <strong>AI 生成进度</strong>
-                <p>{buildLectureNotesProgressText(activeDocumentStatus)}</p>
-                <p className="document-error">{activeDocumentStatus.course_summary_error}</p>
-              </div>
-            ) : null}
+            <p className={`pdf-reader-message pdf-reader-message--${readerState}`}>
+              {readerMessage}
+            </p>
           </div>
         ) : null}
 
@@ -396,7 +386,7 @@ export function ReaderView({
                               ) : null}
                               {readerDocument.course_summary_status === "failed" ? (
                                 <p className="document-error">
-                                  {readerDocument.course_summary_error ?? "课程简介生成失败。"}
+                                  课程简介生成失败，请回到课件库查看详情或重新生成。
                                 </p>
                               ) : null}
                             </>

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { AppIcon } from "../AppIcon";
 import type { DocumentItem } from "../../types/api";
 import "./PhaseExamCreateView.css";
 
@@ -63,8 +64,9 @@ export function PhaseExamCreateView({
   return (
     <div className="phase-exam-create-view">
       <header className="phase-exam-header">
-        <button className="back-button" onClick={onBack}>
-          ← 返回
+        <button type="button" className="page-back-button" onClick={onBack}>
+          <AppIcon name="chevronLeft" />
+          返回
         </button>
         <h2>创建阶段考试</h2>
       </header>

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { AppIcon } from "../AppIcon";
 import type { ExamQuestionForTaking } from "../../types/api";
 import "./ExamTakeView.css";
 
@@ -61,8 +62,9 @@ export function ExamTakeView({
   return (
     <div className="exam-take-view">
       <header className="exam-take-header">
-        <button className="back-button" onClick={onBack}>
-          ← 返回
+        <button type="button" className="page-back-button" onClick={onBack}>
+          <AppIcon name="chevronLeft" />
+          返回
         </button>
         <h2>{title}</h2>
         <span className="exam-progress">

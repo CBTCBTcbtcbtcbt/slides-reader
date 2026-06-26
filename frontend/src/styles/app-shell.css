@@ -19,8 +19,11 @@
 }
 
 .app-shell-rail {
-  position: relative;
+  position: sticky;
+  top: 0;
   z-index: 60;
+  align-self: start;
+  height: 100vh;
   min-height: 100vh;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;

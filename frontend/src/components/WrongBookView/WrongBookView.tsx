@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { AppIcon } from "../AppIcon";
 import type { WrongQuestionItem } from "../../types/api";
 import "./WrongBookView.css";
 
@@ -39,8 +40,9 @@ export function WrongBookView({
   return (
     <div className="wrong-book-view">
       <header className="wrong-book-header">
-        <button className="back-button" onClick={onBack}>
-          ← 返回
+        <button type="button" className="page-back-button" onClick={onBack}>
+          <AppIcon name="chevronLeft" />
+          返回
         </button>
         <h2>{documentTitle ? `${documentTitle} 的错题本` : "错题本"}</h2>
         <span className="wrong-count">共 {filteredQuestions.length} 题</span>
