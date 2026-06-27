@@ -96,6 +96,16 @@
   font-weight: 800;
 }
 
+.reader-collapsed-page-controls {
+  min-width: 0;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.reader-collapsed-page-controls .pdf-reader-toolbar {
+  justify-content: flex-end;
+}
+
 .reader-main-actions,
 .reader-secondary-actions,
 .reader-status-row {
@@ -613,7 +623,7 @@
   bottom: 16px;
   z-index: 40;
   display: grid;
-  grid-template-columns: 34px minmax(120px, 170px) 52px 34px auto;
+  grid-template-columns: 34px minmax(120px, 170px) 52px 34px;
   gap: 8px;
   align-items: center;
   min-height: 46px;
@@ -627,8 +637,7 @@
   backdrop-filter: blur(8px);
 }
 
-.pdf-zoom-button,
-.pdf-zoom-reset-button {
+.pdf-zoom-button {
   min-width: 0;
   height: 32px;
   display: inline-grid;
@@ -650,20 +659,13 @@
   height: 18px;
 }
 
-.pdf-zoom-reset-button {
-  padding: 0 10px;
-  font-size: 13px;
-}
-
-.pdf-zoom-button:hover,
-.pdf-zoom-reset-button:hover {
+.pdf-zoom-button:hover {
   border-color: #2f5fbd;
   background: #f4f8ff;
   color: #1d4fa8;
 }
 
-.pdf-zoom-button:disabled,
-.pdf-zoom-reset-button:disabled {
+.pdf-zoom-button:disabled {
   border-color: #d8e0ed;
   background: #eef2f7;
   color: #8a94a6;

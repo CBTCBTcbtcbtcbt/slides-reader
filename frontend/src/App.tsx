@@ -993,10 +993,6 @@ function App() {
     }
   }
 
-  function resetPdfPanOffset() {
-    setPdfPanOffset({ x: 0, y: 0 });
-  }
-
   function handlePdfLoadSuccess({ numPages }: { numPages: number }) {
     // PDF 成功加载后只修正页码边界，不强制回第一页，避免刷新后丢失当前页。
     const boundedPage = Math.min(Math.max(requestedPdfPage, 1), numPages);
@@ -1959,7 +1955,6 @@ function App() {
         onOpenChatSidebar={openChatSidebar}
         onPdfZoomChange={updatePdfZoomPercent}
         onPdfPanChange={setPdfPanOffset}
-        onPdfPanReset={resetPdfPanOffset}
         onGoToPdfPage={goToPdfPage}
         onPdfLoadSuccess={handlePdfLoadSuccess}
         onPdfLoadError={handlePdfLoadError}

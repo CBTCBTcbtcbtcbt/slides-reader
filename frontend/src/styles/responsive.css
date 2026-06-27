@@ -1,3 +1,38 @@
+/* 1080p 笔记本浏览器的实际内容宽度通常不足以容纳阅读页顶部三组控件。 */
+@media (max-width: 1280px) {
+  /* 顶部栏先降级为两列两行：左侧文档信息和右侧操作按钮在第一行，翻页控件独占第二行。 */
+  .reader-topbar {
+    grid-template-columns: minmax(0, 1fr) minmax(240px, auto);
+    align-items: start;
+  }
+
+  /* 左侧文档信息可能包含长标题和讲稿进度，顶部对齐可以避免它和右侧按钮视觉错位。 */
+  .reader-topbar-left {
+    align-items: start;
+  }
+
+  /* 翻页控件跨完整网格宽度后，不会继续挤压文档状态和操作按钮。 */
+  .reader-topbar-center {
+    grid-column: 1 / -1;
+    justify-content: center;
+  }
+
+  /* 右侧按钮仍允许换行，空间不足时按钮会自然进入下一行而不是覆盖其他区域。 */
+  .reader-secondary-actions {
+    justify-content: flex-end;
+  }
+
+  /* 讲稿进度文本保持可收缩和省略，避免长状态文案重新撑破顶部栏。 */
+  .reader-progress-text {
+    max-width: min(100%, 720px);
+  }
+
+  /* 翻页工具条占满第二行，内部按钮继续按自己的最小宽度居中排列。 */
+  .pdf-reader-toolbar {
+    width: 100%;
+  }
+}
+
 @media (max-width: 920px) {
   .app-shell-layout {
     grid-template-columns: 72px minmax(0, 1fr);
@@ -23,6 +58,12 @@
     grid-template-columns: 1fr;
   }
 
+  /* 920px 以下已经是单列移动布局，不再需要跨列设置。 */
+  .reader-topbar-center {
+    grid-column: auto;
+    justify-content: flex-start;
+  }
+
   .reader-topbar-left {
     grid-template-columns: 1fr;
   }
@@ -34,6 +75,11 @@
 
   .reader-collapsed-topbar {
     grid-template-columns: 1fr;
+  }
+
+  .reader-collapsed-page-controls,
+  .reader-collapsed-page-controls .pdf-reader-toolbar {
+    justify-content: flex-start;
   }
 
   .reader-main-actions,
@@ -88,7 +134,7 @@
   .pdf-zoom-control {
     right: 10px;
     bottom: 10px;
-    grid-template-columns: 34px minmax(100px, 1fr) 48px 34px auto;
+    grid-template-columns: 34px minmax(100px, 1fr) 48px 34px;
   }
 }
 
@@ -190,11 +236,6 @@
     right: 8px;
     bottom: 8px;
     grid-template-columns: 34px minmax(88px, 1fr) 48px 34px;
-  }
-
-  .pdf-zoom-reset-button {
-    grid-column: 1 / -1;
-    width: 100%;
   }
 
   .page-chat-header {

@@ -1,13 +1,14 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { DocumentItem, DocumentStatusResponse } from "../../types/api";
 import type { ReaderRightSidebar } from "../../types/ui";
 import { ReaderView } from "./ReaderView";
 
-// react-pdf 需要浏览器 PDF worker 和 canvas；这个测试只关心阅读页 UI 是否展示错误提示，
-// 因此用轻量组件替代 PDF 渲染组件，避免把测试和 PDF 引擎绑定在一起。
+// react-pdf 需要浏览器 PDF worker 和 canvas；这里用轻量组件替代真实渲染，
+// 让测试只覆盖阅读页自己的 UI 行为。
 vi.mock("react-pdf", () => ({
-  Document: ({ children }: { children: React.ReactNode }) => (
+  Document: ({ children }: { children: ReactNode }) => (
     <div data-testid="pdf-document">{children}</div>
   ),
   Page: () => <div data-testid="pdf-page" />,
@@ -58,7 +59,9 @@ function buildStatus(): DocumentStatusResponse {
 function renderReaderView(
   options: {
     readerRightSidebar?: ReaderRightSidebar;
+    isReaderTopbarCollapsed?: boolean;
     isReaderChatCollapsed?: boolean;
+    pageTurnControls?: ReactNode;
     pdfZoomPercent?: number;
     pdfPanOffset?: { x: number; y: number };
     onOpenChatSidebar?: () => void;
@@ -74,7 +77,7 @@ function renderReaderView(
     <ReaderView
       readerDocument={buildDocument()}
       readerRightSidebar={options.readerRightSidebar ?? "none"}
-      isReaderTopbarCollapsed={false}
+      isReaderTopbarCollapsed={options.isReaderTopbarCollapsed ?? false}
       isReaderChatCollapsed={options.isReaderChatCollapsed ?? true}
       currentPdfPage={1}
       totalPdfPages={1}
@@ -83,7 +86,7 @@ function renderReaderView(
       activeDocumentStatus={buildStatus()}
       currentReaderPage={undefined}
       currentPageChatCount={0}
-      pageTurnControls={<div>翻页控件</div>}
+      pageTurnControls={options.pageTurnControls ?? <div>翻页控件</div>}
       pageChatContent={<div>问答内容</div>}
       pageChatStatus={<div>问答状态</div>}
       noteSidebarContent={<div>讲稿内容</div>}
@@ -116,7 +119,6 @@ function renderReaderView(
       onOpenChatSidebar={onOpenChatSidebar}
       onPdfZoomChange={onPdfZoomChange}
       onPdfPanChange={onPdfPanChange}
-      onPdfPanReset={vi.fn()}
       onGoToPdfPage={vi.fn()}
       onPdfLoadSuccess={vi.fn()}
       onPdfLoadError={vi.fn()}
@@ -168,7 +170,7 @@ describe("ReaderView", () => {
     expect(screen.getByRole("complementary", { name: "当前页问答" })).toBeInTheDocument();
   });
 
-  it("PDF 主阅读区右下角提供 100% 到 400% 的缩放控件", () => {
+  it("PDF 主阅读区右下角提供 100% 到 400% 的缩放控件且不再提供居中按钮", () => {
     const onPdfZoomChange = vi.fn();
     renderReaderView({
       pdfZoomPercent: 150,
@@ -178,6 +180,7 @@ describe("ReaderView", () => {
     const slider = screen.getByRole("slider", { name: "PDF 缩放比例" });
     expect(screen.getByRole("button", { name: "缩小 PDF" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "放大 PDF" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "居中" })).not.toBeInTheDocument();
     expect(screen.getByText("150%")).toBeInTheDocument();
     expect(slider).toHaveAttribute("min", "100");
     expect(slider).toHaveAttribute("max", "400");
@@ -210,5 +213,22 @@ describe("ReaderView", () => {
     });
 
     expect(onPdfPanChange).toHaveBeenCalledWith({ x: 55, y: -10 });
+  });
+
+  it("顶部栏折叠后仍然展示翻页控件", () => {
+    renderReaderView({
+      isReaderTopbarCollapsed: true,
+      pageTurnControls: (
+        <div>
+          <button type="button">上一页</button>
+          <button type="button">下一页</button>
+        </div>
+      ),
+    });
+
+    const collapsedTopbar = screen.getByRole("banner");
+
+    expect(within(collapsedTopbar).getByRole("button", { name: "上一页" })).toBeInTheDocument();
+    expect(within(collapsedTopbar).getByRole("button", { name: "下一页" })).toBeInTheDocument();
   });
 });
