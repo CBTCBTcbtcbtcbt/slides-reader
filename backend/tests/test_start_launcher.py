@@ -10,6 +10,8 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]
 START_PATH = PROJECT_DIR / "start.py"
@@ -80,6 +82,139 @@ def test_storage_paths_follow_custom_storage_dir(tmp_path) -> None:
     assert paths.log_dir == tmp_path / "custom-storage" / "logs"
     assert paths.launcher_log == tmp_path / "custom-storage" / "logs" / "launcher.log"
     assert paths.diagnostics_log == tmp_path / "custom-storage" / "logs" / "diagnostics.txt"
+
+
+def test_release_mode_uses_runtime_python_and_release_paths(monkeypatch, tmp_path) -> None:
+    """发行版模式应使用 runtime/python，并把临时目录和工具目录限制在 release 根目录内。"""
+
+    start = load_start_module()
+    monkeypatch.setenv("SLIDES_READER_RELEASE_MODE", "1")
+    paths = start.build_runtime_paths(tmp_path, tmp_path / "storage")
+
+    assert start.is_release_mode() is True
+    assert start.backend_python(paths) == tmp_path / "runtime" / "python" / "python.exe"
+    assert paths.tmp_dir == tmp_path / "storage" / "tmp"
+    assert paths.tools_dir == tmp_path / "tools"
+    assert paths.download_dir == tmp_path / "tools" / "downloads"
+    assert paths.libreoffice_root == tmp_path / "tools" / "libreoffice"
+    assert (
+        paths.portable_soffice
+        == tmp_path
+        / "tools"
+        / "libreoffice"
+        / "LibreOfficePortable"
+        / "App"
+        / "libreoffice"
+        / "program"
+        / "soffice.exe"
+    )
+
+
+def test_source_mode_keeps_backend_venv_python(monkeypatch, tmp_path) -> None:
+    """源码模式应继续使用 backend/.venv，避免破坏当前开发启动方式。"""
+
+    start = load_start_module()
+    monkeypatch.delenv("SLIDES_READER_RELEASE_MODE", raising=False)
+    paths = start.build_runtime_paths(tmp_path, tmp_path / "storage")
+
+    assert start.is_release_mode() is False
+    assert start.backend_python(paths) == tmp_path / "backend" / ".venv" / "Scripts" / "python.exe"
+
+
+def test_release_options_force_storage_under_root(monkeypatch) -> None:
+    """发行版模式应忽略自定义 storage，保证运行数据留在 release 文件夹内。"""
+
+    start = load_start_module()
+    monkeypatch.setenv("SLIDES_READER_RELEASE_MODE", "1")
+
+    options = start.build_launcher_options(
+        [],
+        {
+            "SLIDES_READER_RELEASE_MODE": "1",
+            "SLIDES_READER_STORAGE_DIR": r"C:\outside-storage",
+        },
+    )
+
+    assert options.storage_dir == start.ROOT_DIR / "storage"
+
+
+def test_release_frontend_requires_existing_dist(monkeypatch, tmp_path) -> None:
+    """发行版模式不应尝试构建前端，缺少 frontend/dist 时应直接失败。"""
+
+    start = load_start_module()
+    monkeypatch.setenv("SLIDES_READER_RELEASE_MODE", "1")
+    paths = start.build_runtime_paths(tmp_path, tmp_path / "storage")
+
+    with pytest.raises(RuntimeError, match="frontend/dist/index.html"):
+        start.run_frontend_build({}, paths)
+
+
+def test_resolve_soffice_prefers_environment_path(monkeypatch, tmp_path) -> None:
+    """用户显式指定的 SLIDES_READER_SOFFICE_PATH 应具有最高优先级。"""
+
+    start = load_start_module()
+    fake_soffice = tmp_path / "custom" / "soffice.exe"
+    fake_soffice.parent.mkdir(parents=True)
+    fake_soffice.write_text("", encoding="utf-8")
+    paths = start.build_runtime_paths(tmp_path, tmp_path / "storage")
+    monkeypatch.setattr(start.shutil, "which", lambda _command: None)
+
+    assert start.resolve_soffice_path(paths, {"SLIDES_READER_SOFFICE_PATH": str(fake_soffice)}) == fake_soffice
+
+
+def test_ensure_libreoffice_uses_existing_soffice_without_download(monkeypatch, tmp_path) -> None:
+    """已经能找到 LibreOffice 时，启动器不应重复下载便携版。"""
+
+    start = load_start_module()
+    fake_soffice = tmp_path / "system" / "soffice.exe"
+    fake_soffice.parent.mkdir(parents=True)
+    fake_soffice.write_text("", encoding="utf-8")
+    paths = start.build_runtime_paths(tmp_path, tmp_path / "storage")
+    env: dict[str, str] = {}
+
+    monkeypatch.setattr(start, "resolve_soffice_path", lambda _paths, _env: fake_soffice)
+
+    def fail_download(*_args, **_kwargs) -> None:
+        raise AssertionError("不应下载 LibreOffice")
+
+    monkeypatch.setattr(start, "download_file", fail_download)
+
+    assert start.ensure_libreoffice(env, paths) == fake_soffice
+    assert env["SLIDES_READER_SOFFICE_PATH"] == str(fake_soffice)
+
+
+def test_ensure_libreoffice_downloads_when_release_mode_cannot_find_soffice(monkeypatch, tmp_path) -> None:
+    """发行版模式找不到 LibreOffice 时，应下载并安装到 release/tools 目录。"""
+
+    start = load_start_module()
+    monkeypatch.setenv("SLIDES_READER_RELEASE_MODE", "1")
+    monkeypatch.setattr(start, "is_windows", lambda: True)
+    paths = start.build_runtime_paths(tmp_path, tmp_path / "storage")
+    env: dict[str, str] = {"SLIDES_READER_RELEASE_MODE": "1"}
+    calls: list[str] = []
+
+    def fake_resolve(_paths, _env):
+        if paths.portable_soffice.exists():
+            return paths.portable_soffice
+        return None
+
+    def fake_download(_url, output_path, _log_path) -> None:
+        calls.append("download")
+        output_path.parent.mkdir(parents=True)
+        output_path.write_text("installer", encoding="utf-8")
+
+    def fake_install(_installer_path, _destination, _log_path) -> None:
+        calls.append("install")
+        paths.portable_soffice.parent.mkdir(parents=True)
+        paths.portable_soffice.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(start, "resolve_soffice_path", fake_resolve)
+    monkeypatch.setattr(start, "download_file", fake_download)
+    monkeypatch.setattr(start, "install_libreoffice_portable", fake_install)
+
+    assert start.ensure_libreoffice(env, paths) == paths.portable_soffice
+    assert calls == ["download", "install"]
+    assert env["SLIDES_READER_SOFFICE_PATH"] == str(paths.portable_soffice)
 
 
 def test_open_browser_respects_no_open_option(monkeypatch) -> None:

@@ -17,6 +17,7 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 import webbrowser
@@ -35,6 +36,11 @@ LOG_BACKUP_COUNT = 5
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 8000
 DEFAULT_LOG_LEVEL = "INFO"
+LIBREOFFICE_PORTABLE_URL = (
+    "https://download.documentfoundation.org/libreoffice/portable/26.2.1/"
+    "LibreOfficePortable_26.2.1_MultilingualStandard.paf.exe"
+)
+LIBREOFFICE_PORTABLE_INSTALLER_NAME = "LibreOfficePortable_26.2.1_MultilingualStandard.paf.exe"
 
 
 def is_frozen() -> bool:
@@ -66,13 +72,21 @@ class RuntimePaths:
     backend_dir: Path
     frontend_dir: Path
     frontend_dist_index: Path
+    runtime_python_dir: Path
+    runtime_python: Path
     storage_dir: Path
     log_dir: Path
+    tmp_dir: Path
+    tools_dir: Path
+    download_dir: Path
+    libreoffice_root: Path
+    portable_soffice: Path
     launcher_log: Path
     backend_log: Path
     backend_install_log: Path
     frontend_install_log: Path
     build_log: Path
+    libreoffice_install_log: Path
     diagnostics_log: Path
     pid_files: tuple[Path, ...]
 
@@ -99,6 +113,20 @@ def parse_bool_env(value: str | None, *, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def is_release_mode(env: dict[str, str] | None = None) -> bool:
+    """判断当前是否按便携式发行版规则运行。
+
+    PyInstaller 打包后的 exe 一定属于发行版模式；测试或调试时也可以通过
+    SLIDES_READER_RELEASE_MODE=1 显式启用相同路径规则。
+    """
+
+    env_value = os.environ.get("SLIDES_READER_RELEASE_MODE") if env is None else env.get(
+        "SLIDES_READER_RELEASE_MODE",
+        os.environ.get("SLIDES_READER_RELEASE_MODE"),
+    )
+    return is_frozen() or parse_bool_env(env_value)
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -144,7 +172,11 @@ def build_launcher_options(
         env.get("SLIDES_READER_SKIP_FRONTEND_BUILD"),
     )
     log_level = (args.log_level or env.get("SLIDES_READER_LOG_LEVEL", DEFAULT_LOG_LEVEL)).upper()
-    storage_dir = Path(env.get("SLIDES_READER_STORAGE_DIR", str(ROOT_DIR / "storage"))).resolve()
+    if is_release_mode(env):
+        storage_dir = (ROOT_DIR / "storage").resolve()
+        skip_frontend_build = True
+    else:
+        storage_dir = Path(env.get("SLIDES_READER_STORAGE_DIR", str(ROOT_DIR / "storage"))).resolve()
 
     return LauncherOptions(
         host=host,
@@ -162,20 +194,41 @@ def build_runtime_paths(root_dir: Path, storage_dir: Path) -> RuntimePaths:
 
     backend_dir = root_dir / "backend"
     frontend_dir = root_dir / "frontend"
+    runtime_python_dir = root_dir / "runtime" / "python"
+    runtime_python = (
+        runtime_python_dir / "python.exe"
+        if os.name == "nt"
+        else runtime_python_dir / "bin" / "python"
+    )
     log_dir = storage_dir / "logs"
+    tools_dir = root_dir / "tools"
+    libreoffice_root = tools_dir / "libreoffice"
 
     return RuntimePaths(
         root_dir=root_dir,
         backend_dir=backend_dir,
         frontend_dir=frontend_dir,
         frontend_dist_index=frontend_dir / "dist" / "index.html",
+        runtime_python_dir=runtime_python_dir,
+        runtime_python=runtime_python,
         storage_dir=storage_dir,
         log_dir=log_dir,
+        tmp_dir=storage_dir / "tmp",
+        tools_dir=tools_dir,
+        download_dir=tools_dir / "downloads",
+        libreoffice_root=libreoffice_root,
+        portable_soffice=libreoffice_root
+        / "LibreOfficePortable"
+        / "App"
+        / "libreoffice"
+        / "program"
+        / "soffice.exe",
         launcher_log=log_dir / "launcher.log",
         backend_log=log_dir / "slides-reader.log",
         backend_install_log=log_dir / "backend-install.log",
         frontend_install_log=log_dir / "frontend-install.log",
         build_log=log_dir / "frontend-build.log",
+        libreoffice_install_log=log_dir / "libreoffice-install.log",
         diagnostics_log=log_dir / "diagnostics.txt",
         pid_files=(
             log_dir / "slides-reader.pid",
@@ -225,6 +278,8 @@ def is_windows() -> bool:
 def backend_python(paths: RuntimePaths = PATHS) -> Path:
     """返回当前操作系统下预期的后端虚拟环境 Python 路径。"""
 
+    if is_release_mode():
+        return paths.runtime_python
     if is_windows():
         return paths.backend_dir / ".venv" / "Scripts" / "python.exe"
     return paths.backend_dir / ".venv" / "bin" / "python"
@@ -344,6 +399,8 @@ def run_logged(
 
     logger.info(label)
     logger.debug("Running command in %s: %s", cwd, command)
+    # 日志目录可能在测试或首次启动时尚未创建，写入前先确保父目录存在。
+    log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("ab") as log_file:
         log_file.write(("\n\n$ " + " ".join(command) + "\n").encode("utf-8", errors="replace"))
         result = subprocess.run(
@@ -397,7 +454,13 @@ def ensure_backend_environment(env: dict[str, str], paths: RuntimePaths = PATHS)
     requirements = paths.backend_dir / "requirements.txt"
     require_path(requirements, "backend/requirements.txt not found.")
 
-    if not py.exists():
+    if is_release_mode(env):
+        require_path(
+            py,
+            "Release runtime Python was not found. Please rebuild the release package with "
+            "scripts/build-release.ps1.",
+        )
+    elif not py.exists():
         run_logged(
             [sys.executable, "-m", "venv", str(paths.backend_dir / ".venv")],
             paths.root_dir,
@@ -445,6 +508,15 @@ def run_frontend_build(
     skip_build: bool = False,
 ) -> None:
     """构建前端；Node.js 不可用时尽量复用已有 frontend/dist。"""
+
+    if is_release_mode(env):
+        if paths.frontend_dist_index.exists():
+            logger.info("Using packaged frontend/dist build.")
+            return
+        raise RuntimeError(
+            "frontend/dist/index.html not found at "
+            f"{paths.frontend_dist_index}. Please rebuild the release package with scripts/build-release.ps1.",
+        )
 
     if skip_build and paths.frontend_dist_index.exists():
         logger.info("Using existing frontend/dist build.")
@@ -575,15 +647,14 @@ def stop_process(process: subprocess.Popen[bytes] | None) -> None:
         process.kill()
 
 
-def find_soffice() -> str | None:
-    """查找 LibreOffice 的 soffice 命令，用于诊断 PPT/PPTX 转换能力。"""
+def resolve_soffice_path(paths: RuntimePaths = PATHS, env: dict[str, str] | None = None) -> Path | None:
+    """按固定优先级查找 LibreOffice 的 soffice 可执行文件。"""
 
-    env_path = os.environ.get("SLIDES_READER_SOFFICE_PATH")
-    candidates = [env_path] if env_path else []
+    env = os.environ if env is None else env
+    candidates = [env.get("SLIDES_READER_SOFFICE_PATH"), str(paths.portable_soffice)]
     if is_windows():
         candidates.extend(
             [
-                str(ROOT_DIR / "tools" / "libreoffice" / "LibreOfficePortable" / "App" / "libreoffice" / "program" / "soffice.exe"),
                 r"C:\Program Files\LibreOffice\program\soffice.exe",
                 r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
             ],
@@ -595,8 +666,117 @@ def find_soffice() -> str | None:
     candidates.append(path_command)
     for candidate in candidates:
         if candidate and Path(candidate).exists():
-            return candidate
+            return Path(candidate).resolve()
     return None
+
+
+def find_soffice() -> str | None:
+    """查找 LibreOffice 的 soffice 命令，用于诊断 PPT/PPTX 转换能力。"""
+
+    soffice = resolve_soffice_path(PATHS, os.environ)
+    return str(soffice) if soffice is not None else None
+
+
+def download_file(url: str, output_path: Path, log_path: Path) -> None:
+    """下载文件到指定路径，并把下载过程写入日志。"""
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    if output_path.exists():
+        logger.info("Using cached download: %s", output_path)
+        return
+
+    logger.info("Downloading LibreOffice Portable...")
+    with log_path.open("ab") as log_file:
+        log_file.write((f"\n\nDownloading {url}\nTo {output_path}\n").encode("utf-8"))
+        try:
+            with urllib.request.urlopen(url, timeout=60) as response:
+                with output_path.open("wb") as output_file:
+                    shutil.copyfileobj(response, output_file)
+        except Exception:
+            log_file.write(b"Download failed.\n")
+            raise
+        log_file.write(b"Download finished.\n")
+
+
+def install_libreoffice_portable(installer_path: Path, destination: Path, log_path: Path) -> None:
+    """静默安装 PortableApps 版 LibreOffice 到 release/tools 目录。"""
+
+    destination.mkdir(parents=True, exist_ok=True)
+    command = [str(installer_path), "/S", f"/DESTINATION={destination}"]
+    run_logged(
+        command,
+        destination,
+        os.environ.copy(),
+        log_path,
+        "Installing LibreOffice Portable...",
+    )
+
+
+def ensure_libreoffice(env: dict[str, str], paths: RuntimePaths = PATHS) -> Path | None:
+    """确保 PPT/PPTX 转换所需的 LibreOffice 可用。"""
+
+    soffice = resolve_soffice_path(paths, env)
+    if soffice is not None:
+        env["SLIDES_READER_SOFFICE_PATH"] = str(soffice)
+        logger.info("LibreOffice found: %s", soffice)
+        return soffice
+
+    if not is_windows():
+        logger.warning("LibreOffice was not found. PPT/PPTX conversion will be unavailable.")
+        return None
+
+    installer_path = paths.download_dir / LIBREOFFICE_PORTABLE_INSTALLER_NAME
+    download_file(LIBREOFFICE_PORTABLE_URL, installer_path, paths.libreoffice_install_log)
+    install_libreoffice_portable(installer_path, paths.libreoffice_root, paths.libreoffice_install_log)
+
+    soffice = resolve_soffice_path(paths, env)
+    if soffice is None:
+        fallback_matches = list(paths.libreoffice_root.rglob("soffice.exe"))
+        if fallback_matches:
+            soffice = fallback_matches[0].resolve()
+
+    if soffice is None:
+        print_log_tail(paths.libreoffice_install_log)
+        raise RuntimeError(
+            f"LibreOffice Portable was installed, but soffice.exe was not found under {paths.libreoffice_root}."
+        )
+
+    env["SLIDES_READER_SOFFICE_PATH"] = str(soffice)
+    logger.info("LibreOffice Portable ready: %s", soffice)
+    return soffice
+
+
+def tail_log_file(path: Path, stop_event: threading.Event) -> None:
+    """持续把日志文件新增内容打印到终端。"""
+
+    while not path.exists() and not stop_event.is_set():
+        time.sleep(0.2)
+    if stop_event.is_set():
+        return
+
+    with path.open("r", encoding="utf-8", errors="replace") as log_file:
+        log_file.seek(0, os.SEEK_END)
+        while not stop_event.is_set():
+            line = log_file.readline()
+            if line:
+                print(line, end="")
+                continue
+            time.sleep(0.2)
+
+
+def start_backend_log_tail(path: Path) -> tuple[threading.Event, threading.Thread]:
+    """启动后端日志实时输出线程，并返回停止信号和线程对象。"""
+
+    stop_event = threading.Event()
+    thread = threading.Thread(
+        target=tail_log_file,
+        args=(path, stop_event),
+        daemon=True,
+        name="slides-reader-backend-log-tail",
+    )
+    thread.start()
+    return stop_event, thread
 
 
 def collect_diagnostics(
@@ -627,8 +807,11 @@ def collect_diagnostics(
         f"Root dir: {paths.root_dir}",
         f"Storage dir: {paths.storage_dir}",
         f"Log dir: {paths.log_dir}",
+        f"Temp dir: {paths.tmp_dir}",
         f"Python executable: {sys.executable}",
         f"Backend venv Python: {py} ({'exists' if py.exists() else 'missing'})",
+        f"Release mode: {is_release_mode(env)}",
+        f"Runtime Python dir: {paths.runtime_python_dir}",
         f"Backend pip available: {pip_available}",
         f"Backend imports available: {backend_import_check(py, env, paths) if py.exists() else False}",
         f"Node.js command: {node_command or 'missing'}",
@@ -640,7 +823,7 @@ def collect_diagnostics(
         f"Auto open browser: {options.open_browser}",
         f"Skip frontend build: {options.skip_frontend_build}",
         f"Log level: {options.log_level}",
-        f"LibreOffice soffice: {find_soffice() or 'missing'}",
+        f"LibreOffice soffice: {resolve_soffice_path(paths, env) or 'missing'}",
     ]
     return "\n".join(lines) + "\n"
 
@@ -663,11 +846,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     paths = build_runtime_paths(ROOT_DIR, options.storage_dir)
     paths.log_dir.mkdir(parents=True, exist_ok=True)
     paths.storage_dir.mkdir(parents=True, exist_ok=True)
+    paths.tmp_dir.mkdir(parents=True, exist_ok=True)
+    paths.download_dir.mkdir(parents=True, exist_ok=True)
+    paths.libreoffice_root.mkdir(parents=True, exist_ok=True)
     setup_launcher_logging(paths, options.log_level)
 
     env = os.environ.copy()
     env["SLIDES_READER_STORAGE_DIR"] = str(paths.storage_dir)
     env["SLIDES_READER_LOG_DIR"] = str(paths.log_dir)
+    env["TEMP"] = str(paths.tmp_dir)
+    env["TMP"] = str(paths.tmp_dir)
 
     logger.info("Slides Reader launcher starting.")
     logger.debug("Options: %s", options)
@@ -681,14 +869,20 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     backend: subprocess.Popen[bytes] | None = None
     backend_log_file: object | None = None
+    log_tail_stop: threading.Event | None = None
+    log_tail_thread: threading.Thread | None = None
 
     def cleanup() -> None:
+        if log_tail_stop is not None:
+            log_tail_stop.set()
         stop_process(backend)
         if backend_log_file is not None:
             try:
                 backend_log_file.close()
             except Exception:
                 logger.debug("Could not close backend log file.", exc_info=True)
+        if log_tail_thread is not None:
+            log_tail_thread.join(timeout=2)
         for pid_file in paths.pid_files:
             try:
                 pid_file.unlink()
@@ -709,6 +903,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         stop_previous_instances(paths)
         py = ensure_backend_environment(env, paths)
         run_frontend_build(env, paths, skip_build=options.skip_frontend_build)
+        ensure_libreoffice(env, paths)
 
         backend_port = find_free_port(options.port)
         local_health_url = f"http://127.0.0.1:{backend_port}/api/health"
@@ -717,6 +912,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         logger.info("Starting Slides Reader on %s", open_url)
         backend, backend_log_file = start_backend(py, options.host, backend_port, env, paths)
+        log_tail_stop, log_tail_thread = start_backend_log_tail(paths.backend_log)
         (paths.log_dir / "slides-reader.pid").write_text(str(backend.pid), encoding="utf-8")
 
         wait_for_http(local_health_url, "Backend", backend)
@@ -742,6 +938,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print_log_tail(paths.backend_install_log)
         print_log_tail(paths.frontend_install_log)
         print_log_tail(paths.build_log)
+        print_log_tail(paths.libreoffice_install_log)
         print_log_tail(paths.backend_log)
         cleanup()
         return 1

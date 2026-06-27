@@ -16,6 +16,8 @@ dist/
 # PyInstaller 打包产物，可以通过 pyinstaller 命令重新生成。
 build/
 *.spec
+release/
+runtime/
 
 # 本地环境变量文件可能包含密钥，不能提交。
 .env

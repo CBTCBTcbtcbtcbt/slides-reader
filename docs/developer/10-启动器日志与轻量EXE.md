@@ -181,17 +181,23 @@ python start.py --diagnostics
 storage/logs/diagnostics.txt
 ```
 
-## Windows 轻量 EXE
+## Windows 便携式 Release EXE
 
-当前采用轻量启动器方式打包。也就是说，只把 `start.py` 打包成 `SlidesReader.exe`，不把整个项目源码、前端、后端和运行数据都塞进一个 exe。
+当前采用便携式 release 文件夹方式打包。`SlidesReader.exe` 仍然只负责启动和检查环境，但它旁边会放好后端代码、前端构建结果和 Python runtime。
 
 打包命令：
+
+```powershell
+.\scripts\build-release.ps1
+```
+
+脚本内部会调用 PyInstaller：
 
 ```powershell
 pyinstaller --onefile --console --name SlidesReader start.py
 ```
 
-`--onefile` 表示输出单个 exe。`--console` 表示保留终端窗口，用户能看到启动进度、日志路径和错误信息，也可以按 `Ctrl+C` 停止服务。
+`--onefile` 表示启动器本身输出为单个 exe。`--console` 表示保留终端窗口，用户能看到启动进度、后端实时日志和错误信息，也可以按 `Ctrl+C` 停止服务。
 
 打包完成后，通常会生成：
 
@@ -199,24 +205,86 @@ pyinstaller --onefile --console --name SlidesReader start.py
 build/                # PyInstaller 中间文件
 dist/SlidesReader.exe # 最终 exe
 SlidesReader.spec     # PyInstaller 配置文件
+release/SlidesReader/ # 给用户使用的便携式发行目录
 ```
 
-`build/` 和 `SlidesReader.spec` 可以重新生成，已经被 `.gitignore` 忽略。`dist/` 也已经被忽略。
+这些内容可以重新生成，已经被 `.gitignore` 忽略。
 
 ## EXE 分发结构
 
-轻量启动器运行时会把 exe 所在目录当成项目根目录。因此分发时需要保持：
+启动器运行时会把 exe 所在目录当成项目根目录。因此分发时需要保持：
 
 ```text
 SlidesReader/
   SlidesReader.exe
   backend/
   frontend/
+    dist/
+  runtime/
+    python/
+  tools/
+    downloads/
+    libreoffice/
   storage/
   README.md
 ```
 
-不要只复制单独的 `SlidesReader.exe`。它需要在旁边找到 `backend/`、`frontend/`、`backend/requirements.txt` 和 `frontend/package.json`。
+不要只复制单独的 `SlidesReader.exe`。它需要在旁边找到 `backend/`、`frontend/dist/` 和 `runtime/python/`。
+
+## Release 模式运行规则
+
+当启动器由 PyInstaller 打包后的 `SlidesReader.exe` 运行，或设置了 `SLIDES_READER_RELEASE_MODE=1` 时，会进入 release 模式。
+
+release 模式会使用这些路径：
+
+```text
+runtime/python/python.exe
+storage/
+storage/logs/
+storage/tmp/
+tools/downloads/
+tools/libreoffice/
+```
+
+release 模式不会运行 `npm install` 或 `npm run build`。它只检查 `frontend/dist/index.html` 是否存在。缺失时说明发行包没有正确构建，需要重新运行：
+
+```powershell
+.\scripts\build-release.ps1
+```
+
+release 模式下，后端依赖安装到 `runtime/python/`，不会创建 `backend/.venv`。首次启动如果缺少依赖，会执行：
+
+```powershell
+runtime/python/python.exe -m pip install -r backend/requirements.txt
+```
+
+## LibreOffice 自动准备
+
+启动器查找 LibreOffice 的顺序是：
+
+1. `SLIDES_READER_SOFFICE_PATH`
+2. `tools/libreoffice/LibreOfficePortable/App/libreoffice/program/soffice.exe`
+3. `C:\Program Files\LibreOffice\program\soffice.exe`
+4. `C:\Program Files (x86)\LibreOffice\program\soffice.exe`
+5. PATH 中的 `soffice.exe`
+
+如果都找不到，启动器会下载 LibreOffice Portable 到：
+
+```text
+tools/downloads/
+```
+
+然后静默安装到：
+
+```text
+tools/libreoffice/
+```
+
+安装日志写入：
+
+```text
+storage/logs/libreoffice-install.log
+```
 
 ## Linux 源码运行
 
