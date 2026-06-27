@@ -1,4 +1,4 @@
-import { memo, useMemo, type CSSProperties, type ReactNode } from "react";
+import { memo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   Document as PdfDocument,
   Page as PdfPage,
@@ -8,7 +8,13 @@ import {
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import type { DocumentItem, DocumentStatusResponse, PageItem } from "../../types/api";
-import type { DocumentActionState, LoadedPdfPage, ReaderRightSidebar, ReaderState } from "../../types/ui";
+import type {
+  DocumentActionState,
+  LoadedPdfPage,
+  PdfPanOffset,
+  ReaderRightSidebar,
+  ReaderState,
+} from "../../types/ui";
 import { AppIcon } from "../AppIcon";
 import { MarkdownContent } from "../MarkdownContent";
 
@@ -26,6 +32,16 @@ const PDF_ERROR_ELEMENT = <div className="pdf-error">PDF 加载失败，请返�
 const PDF_PAGE_LOADING_ELEMENT = <div className="pdf-loading">正在渲染当前页...</div>;
 
 const MemoizedPdfPage = memo(PdfPage);
+const MIN_PDF_ZOOM_PERCENT = 100;
+const MAX_PDF_ZOOM_PERCENT = 400;
+const PDF_ZOOM_STEP = 10;
+
+type PdfPanStart = {
+  pointerId: number;
+  clientX: number;
+  clientY: number;
+  offset: PdfPanOffset;
+};
 
 type ReaderViewProps = {
   readerDocument: DocumentItem;
@@ -45,14 +61,17 @@ type ReaderViewProps = {
   noteSidebarContent: ReactNode;
   noteBlockElement: ReactNode;
   pdfPageWidth: number | undefined;
+  pdfZoomPercent: number;
+  pdfPanOffset: PdfPanOffset;
   thumbnailRenderWidth: number;
   thumbnailSidebarWidth: number;
   courseSummarySidebarWidth: number;
   isResizingThumbnailSidebar: boolean;
   isResizingCourseSummarySidebar: boolean;
-  readerWorkspaceRef: React.RefObject<HTMLElement | null>;
-  readerViewportRef: React.RefObject<HTMLDivElement | null>;
-  readerContentRef: React.RefObject<HTMLDivElement | null>;
+  readerWorkspaceRef: React.RefCallback<HTMLElement>;
+  readerViewportRef: React.RefCallback<HTMLDivElement>;
+  readerContentRef: React.RefCallback<HTMLDivElement>;
+  readerPageStageRef: React.RefCallback<HTMLDivElement>;
   documentActionState: DocumentActionState;
   getStatusLabel: (status: string) => string;
   getCourseSummaryStatusLabel: (status: string) => string;
@@ -67,7 +86,9 @@ type ReaderViewProps = {
   onCloseRightSidebar: () => void;
   onToggleNoteSidebar: () => void;
   onOpenChatSidebar: () => void;
-  onSetReaderChatCollapsed: (isCollapsed: boolean) => void;
+  onPdfZoomChange: (zoomPercent: number) => void;
+  onPdfPanChange: (offset: PdfPanOffset) => void;
+  onPdfPanReset: () => void;
   onGoToPdfPage: (pageNumber: number) => void;
   onPdfLoadSuccess: ({ numPages }: { numPages: number }) => void;
   onPdfLoadError: (error: Error) => void;
@@ -97,6 +118,8 @@ export function ReaderView({
   noteSidebarContent,
   noteBlockElement,
   pdfPageWidth,
+  pdfZoomPercent,
+  pdfPanOffset,
   thumbnailRenderWidth,
   thumbnailSidebarWidth,
   courseSummarySidebarWidth,
@@ -105,6 +128,7 @@ export function ReaderView({
   readerWorkspaceRef,
   readerViewportRef,
   readerContentRef,
+  readerPageStageRef,
   documentActionState,
   getStatusLabel,
   getCourseSummaryStatusLabel,
@@ -119,7 +143,9 @@ export function ReaderView({
   onCloseRightSidebar,
   onToggleNoteSidebar,
   onOpenChatSidebar,
-  onSetReaderChatCollapsed,
+  onPdfZoomChange,
+  onPdfPanChange,
+  onPdfPanReset,
   onGoToPdfPage,
   onPdfLoadSuccess,
   onPdfLoadError,
@@ -130,7 +156,15 @@ export function ReaderView({
   onRegenerateCourseSummary,
   onRegeneratePageLectureNotes,
 }: ReaderViewProps) {
+  const panStartRef = useRef<PdfPanStart | null>(null);
+  const [isPdfPanning, setIsPdfPanning] = useState(false);
   const fileUrl = `api/documents/${readerDocument.document_id}/file`;
+  const canPanPdfPage = pdfZoomPercent > MIN_PDF_ZOOM_PERCENT;
+  const pdfPanX = canPanPdfPage ? pdfPanOffset.x : 0;
+  const pdfPanY = canPanPdfPage ? pdfPanOffset.y : 0;
+  const pdfPageTransformStyle = {
+    transform: `translate3d(${pdfPanX}px, ${pdfPanY}px, 0)`,
+  } as CSSProperties;
   const isRegeneratingCurrentPageLectureNotes =
     currentReaderPage !== undefined &&
     documentActionState?.documentId === readerDocument.document_id &&
@@ -141,6 +175,61 @@ export function ReaderView({
     readerDocument.course_summary_status === "ready" &&
     Boolean(readerDocument.course_summary) &&
     !isDocumentBusy(readerDocument.document_id);
+
+  function handlePdfStagePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    // 只有局部放大后才启用拖动画布；100% 时保留普通阅读和文本选择体验。
+    if (!canPanPdfPage || event.button !== 0) {
+      return;
+    }
+
+    event.preventDefault();
+    if (typeof event.currentTarget.setPointerCapture === "function") {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
+    panStartRef.current = {
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      offset: pdfPanOffset,
+    };
+    setIsPdfPanning(true);
+  }
+
+  function handlePdfStagePointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    const panStart = panStartRef.current;
+    if (panStart === null || panStart.pointerId !== event.pointerId) {
+      return;
+    }
+
+    event.preventDefault();
+    onPdfPanChange({
+      x: panStart.offset.x + event.clientX - panStart.clientX,
+      y: panStart.offset.y + event.clientY - panStart.clientY,
+    });
+  }
+
+  function finishPdfPan(event: React.PointerEvent<HTMLDivElement>) {
+    const panStart = panStartRef.current;
+    if (panStart === null || panStart.pointerId !== event.pointerId) {
+      return;
+    }
+
+    if (
+      typeof event.currentTarget.hasPointerCapture === "function" &&
+      typeof event.currentTarget.releasePointerCapture === "function" &&
+      event.currentTarget.hasPointerCapture(event.pointerId)
+    ) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    panStartRef.current = null;
+    setIsPdfPanning(false);
+  }
+
+  function updateZoomFromControl(nextZoomPercent: number) {
+    onPdfZoomChange(
+      Math.min(MAX_PDF_ZOOM_PERCENT, Math.max(MIN_PDF_ZOOM_PERCENT, nextZoomPercent)),
+    );
+  }
 
   return (
     <main className="app-shell app-shell--reader">
@@ -305,18 +394,76 @@ export function ReaderView({
                     aria-label="拖动调整缩略图栏宽度"
                   />
 
-                  <div className="pdf-page-stage">
-                    <MemoizedPdfPage
-                      key={`${readerDocument.document_id}-${currentPdfPage}`}
-                      pageNumber={currentPdfPage}
-                      width={pdfPageWidth}
-                      loading={PDF_PAGE_LOADING_ELEMENT}
-                      renderAnnotationLayer={true}
-                      renderTextLayer={true}
-                      onLoadSuccess={onPdfPageLoadSuccess}
-                      onRenderError={onPdfPageRenderError}
-                    />
-                    {noteBlockElement}
+                  <div
+                    ref={readerPageStageRef}
+                    className={`pdf-page-stage${canPanPdfPage ? " pdf-page-stage--zoomed" : ""}${
+                      isPdfPanning ? " pdf-page-stage--panning" : ""
+                    }`}
+                    role="region"
+                    aria-label="PDF 主阅读区"
+                    onPointerDown={handlePdfStagePointerDown}
+                    onPointerMove={handlePdfStagePointerMove}
+                    onPointerUp={finishPdfPan}
+                    onPointerCancel={finishPdfPan}
+                  >
+                    <div className="pdf-page-transform-layer" style={pdfPageTransformStyle}>
+                      <MemoizedPdfPage
+                        key={`${readerDocument.document_id}-${currentPdfPage}`}
+                        pageNumber={currentPdfPage}
+                        width={pdfPageWidth}
+                        loading={PDF_PAGE_LOADING_ELEMENT}
+                        renderAnnotationLayer={true}
+                        renderTextLayer={true}
+                        onLoadSuccess={onPdfPageLoadSuccess}
+                        onRenderError={onPdfPageRenderError}
+                      />
+                      {noteBlockElement}
+                    </div>
+
+                    <div
+                      className="pdf-zoom-control"
+                      onPointerDown={(event) => event.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        className="pdf-zoom-button"
+                        onClick={() => updateZoomFromControl(pdfZoomPercent - PDF_ZOOM_STEP)}
+                        disabled={pdfZoomPercent <= MIN_PDF_ZOOM_PERCENT}
+                        aria-label="缩小 PDF"
+                        title="缩小 PDF"
+                      >
+                        <AppIcon name="zoomOut" />
+                      </button>
+                      <input
+                        className="pdf-zoom-slider"
+                        type="range"
+                        min={MIN_PDF_ZOOM_PERCENT}
+                        max={MAX_PDF_ZOOM_PERCENT}
+                        step={PDF_ZOOM_STEP}
+                        value={pdfZoomPercent}
+                        onChange={(event) => updateZoomFromControl(Number(event.target.value))}
+                        aria-label="PDF 缩放比例"
+                      />
+                      <span className="pdf-zoom-value">{pdfZoomPercent}%</span>
+                      <button
+                        type="button"
+                        className="pdf-zoom-button"
+                        onClick={() => updateZoomFromControl(pdfZoomPercent + PDF_ZOOM_STEP)}
+                        disabled={pdfZoomPercent >= MAX_PDF_ZOOM_PERCENT}
+                        aria-label="放大 PDF"
+                        title="放大 PDF"
+                      >
+                        <AppIcon name="zoomIn" />
+                      </button>
+                      <button
+                        type="button"
+                        className="pdf-zoom-reset-button"
+                        onClick={onPdfPanReset}
+                        disabled={!canPanPdfPage || (pdfPanOffset.x === 0 && pdfPanOffset.y === 0)}
+                      >
+                        居中
+                      </button>
+                    </div>
                   </div>
 
                   {readerRightSidebar !== "none" ? (
@@ -423,47 +570,18 @@ export function ReaderView({
           </div>
         </section>
 
-        {readerRightSidebar === "chat" ? null : isReaderChatCollapsed ? (
+        {readerRightSidebar === "chat" ? null : (
           <section className="reader-chat-collapsed">
             <button
               type="button"
               className="topbar-button topbar-button--primary"
-              onClick={() => onSetReaderChatCollapsed(false)}
+              onClick={onOpenChatSidebar}
             >
               <AppIcon name="message" />
-              展开会话
+              打开右侧问答
             </button>
             <span>当前页问答：第 {currentPdfPage} 页</span>
             <span>{currentPageChatCount > 0 ? `${currentPageChatCount} 条历史` : "暂无问答历史"}</span>
-          </section>
-        ) : (
-          <section className="reader-chat-dock page-chat-panel">
-            <div className="page-chat-header">
-              <div>
-                <h2>当前页问答</h2>
-                <p>这里的历史只属于第 {currentPdfPage} 页，切换页面后会显示新页面自己的问答。</p>
-              </div>
-              <div className="page-chat-header-actions">
-                {currentReaderPage ? (
-                  <span className="page-chat-page-badge">第 {currentReaderPage.page_number} 页</span>
-                ) : null}
-                <button type="button" className="topbar-button" onClick={onOpenChatSidebar}>
-                  <AppIcon name="message" />
-                  移到右侧栏
-                </button>
-                <button
-                  type="button"
-                  className="topbar-button"
-                  onClick={() => onSetReaderChatCollapsed(true)}
-                >
-                  <AppIcon name="chevronLeft" />
-                  折叠会话
-                </button>
-              </div>
-            </div>
-
-            {pageChatContent}
-            {pageChatStatus}
           </section>
         )}
       </section>

@@ -574,12 +574,28 @@
   padding: 0;
 }
 
+.pdf-page-stage--zoomed {
+  cursor: grab;
+  touch-action: none;
+}
+
+.pdf-page-stage--panning {
+  cursor: grabbing;
+}
+
+.pdf-page-transform-layer {
+  position: relative;
+  display: grid;
+  place-items: center;
+  max-width: none;
+  will-change: transform;
+}
+
 .pdf-page-stage .react-pdf__Page {
   margin: 0;
 }
 
 .react-pdf__Page {
-  max-width: 100%;
   overflow: hidden;
   border-radius: 4px;
   background: #ffffff;
@@ -587,9 +603,85 @@
 }
 
 .react-pdf__Page canvas {
-  max-width: 100%;
   height: auto !important;
   display: block;
+}
+
+.pdf-zoom-control {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 40;
+  display: grid;
+  grid-template-columns: 34px minmax(120px, 170px) 52px 34px auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 46px;
+  max-width: calc(100% - 32px);
+  padding: 7px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background: rgb(255 255 255 / 94%);
+  color: #1f2a3d;
+  box-shadow: 0 12px 30px rgb(15 23 42 / 18%);
+  backdrop-filter: blur(8px);
+}
+
+.pdf-zoom-button,
+.pdf-zoom-reset-button {
+  min-width: 0;
+  height: 32px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid #c7d2e3;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #2f466d;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.pdf-zoom-button {
+  width: 34px;
+}
+
+.pdf-zoom-button .app-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.pdf-zoom-reset-button {
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.pdf-zoom-button:hover,
+.pdf-zoom-reset-button:hover {
+  border-color: #2f5fbd;
+  background: #f4f8ff;
+  color: #1d4fa8;
+}
+
+.pdf-zoom-button:disabled,
+.pdf-zoom-reset-button:disabled {
+  border-color: #d8e0ed;
+  background: #eef2f7;
+  color: #8a94a6;
+  cursor: not-allowed;
+}
+
+.pdf-zoom-slider {
+  width: 100%;
+  min-width: 120px;
+  accent-color: #2f5fbd;
+}
+
+.pdf-zoom-value {
+  min-width: 52px;
+  color: #1f2a3d;
+  font-size: 13px;
+  font-weight: 900;
+  text-align: center;
 }
 
 .pdf-loading,
@@ -606,19 +698,6 @@
   color: #b42318;
 }
 
-.reader-chat-dock {
-  grid-area: chat;
-  z-index: 25;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  align-items: stretch;
-  min-height: 0;
-  max-height: 260px;
-  overflow: hidden;
-  border-color: #cbd5e1;
-  background: #ffffff;
-  box-shadow: 0 -10px 26px rgb(27 31 42 / 12%);
-}
-
 .reader-chat-collapsed {
   grid-area: chat;
   display: flex;
@@ -631,32 +710,4 @@
   color: #50607a;
   font-size: 13px;
   font-weight: 800;
-}
-
-.reader-chat-dock .page-chat-header {
-  display: flex;
-  min-width: 0;
-}
-
-.reader-chat-dock .page-chat-history {
-  max-height: none;
-}
-
-.reader-chat-dock .page-chat-form {
-  min-width: 0;
-}
-
-.reader-chat-dock .page-chat-input-label textarea {
-  min-height: 42px;
-  max-height: 92px;
-}
-
-.reader-chat-dock .page-chat-attachment,
-.reader-chat-dock .page-chat-pending-attachment {
-  width: 56px;
-  height: 56px;
-}
-
-.reader-chat-dock .page-chat-status {
-  grid-column: 1 / -1;
 }

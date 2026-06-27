@@ -23,6 +23,11 @@ export type PdfPageNaturalSize = {
   height: number;
 };
 
+export type PdfPanOffset = {
+  x: number;
+  y: number;
+};
+
 export type LoadedPdfPage = {
   originalWidth: number;
   originalHeight: number;

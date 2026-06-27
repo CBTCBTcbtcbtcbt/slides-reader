@@ -40,7 +40,7 @@ import { WrongBookView } from "./components/WrongBookView/WrongBookView";
 import { useDocumentPolling } from "./hooks/useDocumentPolling";
 import { useExamWorkflows } from "./hooks/useExamWorkflows";
 import { useNoteBlockInteraction } from "./hooks/useNoteBlockInteraction";
-import { usePdfSizing } from "./hooks/usePdfSizing";
+import { resolvePdfPageWidth, usePdfSizing } from "./hooks/usePdfSizing";
 import type {
   ChatMessageItem,
   DocumentItem,
@@ -62,6 +62,7 @@ import type {
   LoadedPdfPage,
   NoteBlockLayout,
   PendingChatAttachment,
+  PdfPanOffset,
   PdfPageNaturalSize,
   ReaderRightSidebar,
   ReaderState,
@@ -76,6 +77,8 @@ const PDF_READER_COLUMN_GAP = 16;
 const MIN_PDF_PAGE_STAGE_WIDTH = 120;
 const MIN_NOTE_BLOCK_WIDTH = 120;
 const MIN_NOTE_BLOCK_HEIGHT = 80;
+const MIN_PDF_ZOOM_PERCENT = 100;
+const MAX_PDF_ZOOM_PERCENT = 400;
 const DOCUMENT_STATUS_POLL_INTERVAL_MS = 2000;
 const PAGE_CHAT_MAX_ATTACHMENTS = 4;
 const FILES_ROUTE = "/";
@@ -113,6 +116,15 @@ function parsePositiveInteger(value: string | null) {
   }
 
   return parsedValue;
+}
+
+function clampPdfZoomPercent(value: number) {
+  // 缩放控件只暴露 100% 到 400%，这里集中兜底，避免按钮和滑块各自写边界逻辑。
+  if (!Number.isFinite(value)) {
+    return MIN_PDF_ZOOM_PERCENT;
+  }
+
+  return Math.min(MAX_PDF_ZOOM_PERCENT, Math.max(MIN_PDF_ZOOM_PERCENT, value));
 }
 
 function App() {
@@ -181,6 +193,8 @@ function App() {
   const [isEditingPdfPage, setIsEditingPdfPage] = useState(false);
   const [pdfPageInputValue, setPdfPageInputValue] = useState("1");
   const [pdfPageNaturalSize, setPdfPageNaturalSize] = useState<PdfPageNaturalSize | null>(null);
+  const [pdfZoomPercent, setPdfZoomPercent] = useState(MIN_PDF_ZOOM_PERCENT);
+  const [pdfPanOffset, setPdfPanOffset] = useState<PdfPanOffset>({ x: 0, y: 0 });
   const pdfPageInputRef = useRef<HTMLInputElement | null>(null);
 
   // 文档重命名、删除和重新生成操作共用一组状态，避免重复点击同一文档的操作按钮。
@@ -246,6 +260,7 @@ function App() {
     readerViewportRef,
     readerWorkspaceRef,
     readerContentRef,
+    readerPageStageRef,
     setReaderViewportWidth,
     setReaderWorkspaceSize,
     startResizingThumbnailSidebar,
@@ -816,6 +831,8 @@ function App() {
     setIsEditingPdfPage(false);
     setTotalPdfPages(0);
     setPdfPageNaturalSize(null);
+    setPdfZoomPercent(MIN_PDF_ZOOM_PERCENT);
+    setPdfPanOffset({ x: 0, y: 0 });
     setReaderViewportWidth(0);
     setReaderWorkspaceSize({ width: 0, height: 0 });
     setReaderState("loading");
@@ -835,6 +852,8 @@ function App() {
     setIsEditingPdfPage(false);
     setTotalPdfPages(0);
     setPdfPageNaturalSize(null);
+    setPdfZoomPercent(MIN_PDF_ZOOM_PERCENT);
+    setPdfPanOffset({ x: 0, y: 0 });
     setReaderViewportWidth(0);
     setReaderWorkspaceSize({ width: 0, height: 0 });
     setReaderState("idle");
@@ -962,6 +981,20 @@ function App() {
   function turnPdfPage(step: -1 | 1) {
     const maxPage = totalPdfPages > 0 ? totalPdfPages : currentPdfPage;
     goToPdfPage(currentPdfPage + step, true, maxPage);
+  }
+
+  function updatePdfZoomPercent(nextZoomPercent: number) {
+    // 缩放回 100% 时恢复页面居中，避免普通阅读状态仍带着上一次拖动偏移。
+    const boundedZoomPercent = clampPdfZoomPercent(nextZoomPercent);
+
+    setPdfZoomPercent(boundedZoomPercent);
+    if (boundedZoomPercent === MIN_PDF_ZOOM_PERCENT) {
+      setPdfPanOffset({ x: 0, y: 0 });
+    }
+  }
+
+  function resetPdfPanOffset() {
+    setPdfPanOffset({ x: 0, y: 0 });
   }
 
   function handlePdfLoadSuccess({ numPages }: { numPages: number }) {
@@ -1725,23 +1758,14 @@ function App() {
     const readerDocument =
       documents.find((document) => document.document_id === activeReaderDocument.document_id) ??
       activeReaderDocument;
-    const pdfPageAspectRatio =
-      pdfPageNaturalSize && pdfPageNaturalSize.height > 0
-        ? pdfPageNaturalSize.width / pdfPageNaturalSize.height
-        : null;
-    const pdfPageWidthByHeight =
-      pdfPageAspectRatio && readerWorkspaceSize.height > 0
-        ? readerWorkspaceSize.height * pdfPageAspectRatio
-        : readerWorkspaceSize.width;
+    const fitPdfPageWidth = resolvePdfPageWidth({
+      readerWorkspaceSize,
+      readerViewportWidth,
+      pdfPageNaturalSize,
+      minPdfPageStageWidth: MIN_PDF_PAGE_STAGE_WIDTH,
+    });
     const pdfPageWidth =
-      readerWorkspaceSize.width > 0
-        ? Math.max(
-            MIN_PDF_PAGE_STAGE_WIDTH,
-            Math.min(readerWorkspaceSize.width, pdfPageWidthByHeight),
-          )
-        : readerViewportWidth > 0
-          ? readerViewportWidth
-          : undefined;
+      fitPdfPageWidth === undefined ? undefined : fitPdfPageWidth * (pdfZoomPercent / 100);
     const readerPages = pagesByDocument[readerDocument.document_id] ?? [];
     const currentReaderPage = readerPages.find((page) => page.page_number === currentPdfPage);
     const activeDocumentStatus = documentStatusById[readerDocument.document_id];
@@ -1901,6 +1925,8 @@ function App() {
         noteSidebarContent={noteSidebarContent}
         noteBlockElement={noteBlockElement}
         pdfPageWidth={pdfPageWidth}
+        pdfZoomPercent={pdfZoomPercent}
+        pdfPanOffset={pdfPanOffset}
         thumbnailRenderWidth={thumbnailRenderWidth}
         thumbnailSidebarWidth={thumbnailSidebarWidth}
         courseSummarySidebarWidth={courseSummarySidebarWidth}
@@ -1909,6 +1935,7 @@ function App() {
         readerWorkspaceRef={readerWorkspaceRef}
         readerViewportRef={readerViewportRef}
         readerContentRef={readerContentRef}
+        readerPageStageRef={readerPageStageRef}
         documentActionState={documentActionState}
         getStatusLabel={getStatusLabel}
         getCourseSummaryStatusLabel={getCourseSummaryStatusLabel}
@@ -1930,7 +1957,9 @@ function App() {
         onCloseRightSidebar={closeRightSidebar}
         onToggleNoteSidebar={toggleNoteSidebar}
         onOpenChatSidebar={openChatSidebar}
-        onSetReaderChatCollapsed={setIsReaderChatCollapsed}
+        onPdfZoomChange={updatePdfZoomPercent}
+        onPdfPanChange={setPdfPanOffset}
+        onPdfPanReset={resetPdfPanOffset}
         onGoToPdfPage={goToPdfPage}
         onPdfLoadSuccess={handlePdfLoadSuccess}
         onPdfLoadError={handlePdfLoadError}

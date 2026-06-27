@@ -1,5 +1,4 @@
-import { createRef } from "react";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { DocumentItem, DocumentStatusResponse } from "../../types/api";
 import type { ReaderRightSidebar } from "../../types/ui";
@@ -56,17 +55,27 @@ function buildStatus(): DocumentStatusResponse {
   };
 }
 
-function renderReaderView(options: { readerRightSidebar?: ReaderRightSidebar } = {}) {
-  const readerWorkspaceRef = createRef<HTMLElement>();
-  const readerViewportRef = createRef<HTMLDivElement>();
-  const readerContentRef = createRef<HTMLDivElement>();
+function renderReaderView(
+  options: {
+    readerRightSidebar?: ReaderRightSidebar;
+    isReaderChatCollapsed?: boolean;
+    pdfZoomPercent?: number;
+    pdfPanOffset?: { x: number; y: number };
+    onOpenChatSidebar?: () => void;
+    onPdfZoomChange?: (zoomPercent: number) => void;
+    onPdfPanChange?: (offset: { x: number; y: number }) => void;
+  } = {},
+) {
+  const onOpenChatSidebar = options.onOpenChatSidebar ?? vi.fn();
+  const onPdfZoomChange = options.onPdfZoomChange ?? vi.fn();
+  const onPdfPanChange = options.onPdfPanChange ?? vi.fn();
 
   return render(
     <ReaderView
       readerDocument={buildDocument()}
       readerRightSidebar={options.readerRightSidebar ?? "none"}
       isReaderTopbarCollapsed={false}
-      isReaderChatCollapsed={true}
+      isReaderChatCollapsed={options.isReaderChatCollapsed ?? true}
       currentPdfPage={1}
       totalPdfPages={1}
       readerState="ready"
@@ -80,14 +89,17 @@ function renderReaderView(options: { readerRightSidebar?: ReaderRightSidebar } =
       noteSidebarContent={<div>讲稿内容</div>}
       noteBlockElement={null}
       pdfPageWidth={320}
+      pdfZoomPercent={options.pdfZoomPercent ?? 100}
+      pdfPanOffset={options.pdfPanOffset ?? { x: 0, y: 0 }}
       thumbnailRenderWidth={120}
       thumbnailSidebarWidth={160}
       courseSummarySidebarWidth={320}
       isResizingThumbnailSidebar={false}
       isResizingCourseSummarySidebar={false}
-      readerWorkspaceRef={readerWorkspaceRef}
-      readerViewportRef={readerViewportRef}
-      readerContentRef={readerContentRef}
+      readerWorkspaceRef={vi.fn()}
+      readerViewportRef={vi.fn()}
+      readerContentRef={vi.fn()}
+      readerPageStageRef={vi.fn()}
       documentActionState={null}
       getStatusLabel={(status) => status}
       getCourseSummaryStatusLabel={(status) => status}
@@ -101,8 +113,10 @@ function renderReaderView(options: { readerRightSidebar?: ReaderRightSidebar } =
       onExpandTopbar={vi.fn()}
       onCloseRightSidebar={vi.fn()}
       onToggleNoteSidebar={vi.fn()}
-      onOpenChatSidebar={vi.fn()}
-      onSetReaderChatCollapsed={vi.fn()}
+      onOpenChatSidebar={onOpenChatSidebar}
+      onPdfZoomChange={onPdfZoomChange}
+      onPdfPanChange={onPdfPanChange}
+      onPdfPanReset={vi.fn()}
       onGoToPdfPage={vi.fn()}
       onPdfLoadSuccess={vi.fn()}
       onPdfLoadError={vi.fn()}
@@ -129,5 +143,72 @@ describe("ReaderView", () => {
 
     expect(screen.queryByText(/LLM 请求超时/)).not.toBeInTheDocument();
     expect(screen.getByText("课程简介生成失败，请回到课件库查看详情或重新生成。")).toBeInTheDocument();
+  });
+
+  it("底部会话只保留收缩栏，并点击后打开右侧问答", () => {
+    const onOpenChatSidebar = vi.fn();
+    renderReaderView({
+      isReaderChatCollapsed: false,
+      onOpenChatSidebar,
+    });
+
+    expect(screen.queryByText("展开会话")).not.toBeInTheDocument();
+    expect(screen.queryByText("折叠会话")).not.toBeInTheDocument();
+    expect(screen.queryByText("移到右侧栏")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "打开右侧问答" }));
+
+    expect(onOpenChatSidebar).toHaveBeenCalledTimes(1);
+  });
+
+  it("右侧问答打开时不再渲染底部会话收缩栏", () => {
+    renderReaderView({ readerRightSidebar: "chat" });
+
+    expect(screen.queryByText("当前页问答：第 1 页")).not.toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "当前页问答" })).toBeInTheDocument();
+  });
+
+  it("PDF 主阅读区右下角提供 100% 到 400% 的缩放控件", () => {
+    const onPdfZoomChange = vi.fn();
+    renderReaderView({
+      pdfZoomPercent: 150,
+      onPdfZoomChange,
+    });
+
+    const slider = screen.getByRole("slider", { name: "PDF 缩放比例" });
+    expect(screen.getByRole("button", { name: "缩小 PDF" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "放大 PDF" })).toBeInTheDocument();
+    expect(screen.getByText("150%")).toBeInTheDocument();
+    expect(slider).toHaveAttribute("min", "100");
+    expect(slider).toHaveAttribute("max", "400");
+
+    fireEvent.change(slider, { target: { value: "220" } });
+
+    expect(onPdfZoomChange).toHaveBeenCalledWith(220);
+  });
+
+  it("PDF 放大后主阅读区支持按住拖动平移", () => {
+    const onPdfPanChange = vi.fn();
+    renderReaderView({
+      pdfZoomPercent: 200,
+      pdfPanOffset: { x: 10, y: 20 },
+      onPdfPanChange,
+    });
+
+    const stage = screen.getByRole("region", { name: "PDF 主阅读区" });
+
+    fireEvent.pointerDown(stage, {
+      pointerId: 1,
+      button: 0,
+      clientX: 100,
+      clientY: 120,
+    });
+    fireEvent.pointerMove(stage, {
+      pointerId: 1,
+      clientX: 145,
+      clientY: 90,
+    });
+
+    expect(onPdfPanChange).toHaveBeenCalledWith({ x: 55, y: -10 });
   });
 });
