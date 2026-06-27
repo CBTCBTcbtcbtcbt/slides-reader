@@ -264,9 +264,12 @@ runtime/python/python.exe -m pip install -r backend/requirements.txt
 
 1. `SLIDES_READER_SOFFICE_PATH`
 2. `tools/libreoffice/LibreOfficePortable/App/libreoffice/program/soffice.exe`
-3. `C:\Program Files\LibreOffice\program\soffice.exe`
-4. `C:\Program Files (x86)\LibreOffice\program\soffice.exe`
-5. PATH 中的 `soffice.exe`
+3. `tools/libreoffice/App/libreoffice/program/soffice.exe`
+4. `tools/libreofficeLibreOfficePortable/App/libreoffice/program/soffice.exe`
+5. `tools/libreoffice/` 或旧拼接目录下递归找到的 `soffice.exe`
+6. `C:\Program Files\LibreOffice\program\soffice.exe`
+7. `C:\Program Files (x86)\LibreOffice\program\soffice.exe`
+8. PATH 中的 `soffice.exe`
 
 如果都找不到，启动器会下载 LibreOffice Portable 到：
 

@@ -32,6 +32,15 @@ $LibreOfficeRoot = Join-Path $ToolsDir "libreoffice"
 # PortableSofficePath 是项目内 LibreOffice Portable 的 soffice.exe 预期位置。
 $PortableSofficePath = Join-Path $LibreOfficeRoot "LibreOfficePortable\App\libreoffice\program\soffice.exe"
 
+# DirectPortableSofficePath 兼容 PortableApps 安装器直接把 App 放进目标目录的结构。
+$DirectPortableSofficePath = Join-Path $LibreOfficeRoot "App\libreoffice\program\soffice.exe"
+
+# LegacyLibreOfficeRoot 兼容旧安装参数可能生成的拼接目录。
+$LegacyLibreOfficeRoot = Join-Path $ToolsDir "libreofficeLibreOfficePortable"
+
+# LegacyPortableSofficePath 是旧拼接目录中的 soffice.exe 位置。
+$LegacyPortableSofficePath = Join-Path $LegacyLibreOfficeRoot "App\libreoffice\program\soffice.exe"
+
 # BackendVenvDir 是后端 Python 虚拟环境目录。
 $BackendVenvDir = Join-Path $BackendDir ".venv"
 
@@ -131,23 +140,56 @@ function Invoke-CheckedCommand {
 }
 
 function Resolve-SofficePath {
-    # candidatePaths 保存按优先级排列的候选路径。
-    $candidatePaths = @()
-
     # 如果用户已经设置过环境变量，就优先使用用户指定的位置。
     if ($env:SLIDES_READER_SOFFICE_PATH) {
-        $candidatePaths += $env:SLIDES_READER_SOFFICE_PATH
+        if (Test-Path -LiteralPath $env:SLIDES_READER_SOFFICE_PATH) {
+            return (Resolve-Path -LiteralPath $env:SLIDES_READER_SOFFICE_PATH).Path
+        }
     }
 
-    # 检查项目内的 LibreOffice Portable。
-    $candidatePaths += $PortableSofficePath
+    # localCandidatePaths 保存项目内 LibreOffice Portable 的常见固定路径。
+    $localCandidatePaths = @(
+        $PortableSofficePath,
+        $DirectPortableSofficePath,
+        $LegacyPortableSofficePath
+    )
 
-    # 检查 Windows 常见的系统安装路径。
-    $candidatePaths += "C:\Program Files\LibreOffice\program\soffice.exe"
-    $candidatePaths += "C:\Program Files (x86)\LibreOffice\program\soffice.exe"
+    # 先逐个检查项目内固定路径，保证已下载的便携版优先于系统安装版本。
+    foreach ($candidatePath in $localCandidatePaths) {
+        if ($candidatePath -and (Test-Path -LiteralPath $candidatePath)) {
+            return (Resolve-Path -LiteralPath $candidatePath).Path
+        }
+    }
 
-    # 逐个检查候选路径，找到第一个真实存在的 soffice.exe 后返回。
-    foreach ($candidatePath in $candidatePaths) {
+    # localSearchRoots 保存项目内可能出现 LibreOffice Portable 的根目录。
+    $localSearchRoots = @(
+        $LibreOfficeRoot,
+        (Join-Path $LibreOfficeRoot "LibreOfficePortable"),
+        $LegacyLibreOfficeRoot
+    )
+
+    # 如果安装器目录结构变化，就在项目工具目录内递归兜底查找 soffice.exe。
+    foreach ($searchRoot in $localSearchRoots) {
+        if (-not (Test-Path -LiteralPath $searchRoot)) {
+            continue
+        }
+
+        $localMatch = Get-ChildItem -LiteralPath $searchRoot -Recurse -Filter "soffice.exe" -ErrorAction SilentlyContinue |
+            Sort-Object { $_.FullName.Length }, FullName |
+            Select-Object -First 1
+        if ($localMatch) {
+            return $localMatch.FullName
+        }
+    }
+
+    # systemCandidatePaths 保存 Windows 常见的系统安装路径。
+    $systemCandidatePaths = @(
+        "C:\Program Files\LibreOffice\program\soffice.exe",
+        "C:\Program Files (x86)\LibreOffice\program\soffice.exe"
+    )
+
+    # 项目内没有便携版时，再使用目标电脑已经安装好的 LibreOffice。
+    foreach ($candidatePath in $systemCandidatePaths) {
         if ($candidatePath -and (Test-Path -LiteralPath $candidatePath)) {
             return (Resolve-Path -LiteralPath $candidatePath).Path
         }
@@ -204,12 +246,19 @@ function Install-LibreOfficePortable {
     # 确保目标目录存在。
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
 
+    # PortableApps 安装器会把应用目录名追加到 /DESTINATION 后面。
+    # 如果路径末尾没有目录分隔符，可能生成 libreofficeLibreOfficePortable 这种拼接目录。
+    $destinationForInstaller = $Destination
+    if (-not ($destinationForInstaller.EndsWith("\") -or $destinationForInstaller.EndsWith("/"))) {
+        $destinationForInstaller = "${destinationForInstaller}\"
+    }
+
     # PortableApps 安装器支持 /S 静默安装和 /DESTINATION= 指定目标目录。
     # 这里用 Start-Process 等待安装完成，避免后续立即检测路径时安装还没结束。
     Write-Host "正在解压 LibreOffice Portable 到：${Destination}"
     $process = Start-Process -FilePath $Installer -ArgumentList @(
         "/S",
-        "/DESTINATION=$Destination"
+        "/DESTINATION=$destinationForInstaller"
     ) -Wait -PassThru
 
     # 非 0 退出码通常表示安装器执行失败。
@@ -351,4 +400,3 @@ Write-Host "前端依赖：${FrontendNodeModulesDir}" -ForegroundColor Green
 Write-Host "LibreOffice：${sofficePath}" -ForegroundColor Green
 Write-Host "当前 PowerShell 会话已设置 SLIDES_READER_SOFFICE_PATH。"
 Write-Host "之后可以运行：.\launch.ps1"
-

@@ -162,6 +162,83 @@ def test_resolve_soffice_prefers_environment_path(monkeypatch, tmp_path) -> None
     assert start.resolve_soffice_path(paths, {"SLIDES_READER_SOFFICE_PATH": str(fake_soffice)}) == fake_soffice
 
 
+def test_resolve_soffice_finds_portable_apps_direct_layout(monkeypatch, tmp_path) -> None:
+    """便携版安装到 tools/libreoffice/App 时，启动器应优先使用这个 release 内路径。"""
+
+    start = load_start_module()
+    paths = start.build_runtime_paths(tmp_path, tmp_path / "storage")
+    fake_soffice = (
+        paths.libreoffice_root
+        / "App"
+        / "libreoffice"
+        / "program"
+        / "soffice.exe"
+    )
+    fake_soffice.parent.mkdir(parents=True)
+    fake_soffice.write_text("", encoding="utf-8")
+    monkeypatch.setattr(start, "is_windows", lambda: True)
+    monkeypatch.setattr(start.shutil, "which", lambda _command: None)
+
+    assert start.resolve_soffice_path(paths, {}) == fake_soffice.resolve()
+
+
+def test_resolve_soffice_finds_legacy_concatenated_portable_layout(monkeypatch, tmp_path) -> None:
+    """兼容旧安装参数可能生成的 tools/libreofficeLibreOfficePortable 目录。"""
+
+    start = load_start_module()
+    paths = start.build_runtime_paths(tmp_path, tmp_path / "storage")
+    fake_soffice = (
+        paths.tools_dir
+        / "libreofficeLibreOfficePortable"
+        / "App"
+        / "libreoffice"
+        / "program"
+        / "soffice.exe"
+    )
+    fake_soffice.parent.mkdir(parents=True)
+    fake_soffice.write_text("", encoding="utf-8")
+    monkeypatch.setattr(start, "is_windows", lambda: True)
+    monkeypatch.setattr(start.shutil, "which", lambda _command: None)
+
+    assert start.resolve_soffice_path(paths, {}) == fake_soffice.resolve()
+
+
+def test_install_libreoffice_portable_passes_destination_with_separator(monkeypatch, tmp_path) -> None:
+    """安装器目标路径应带结尾分隔符，避免生成 libreofficeLibreOfficePortable 这类拼接目录。"""
+
+    start = load_start_module()
+    paths = start.build_runtime_paths(tmp_path, tmp_path / "storage")
+    installer_path = paths.download_dir / "LibreOfficePortable.paf.exe"
+    captured: dict[str, object] = {}
+
+    def fake_run_logged(command, cwd, env, log_path, label, *, required=True):
+        captured["command"] = command
+        captured["cwd"] = cwd
+        captured["env"] = env
+        captured["log_path"] = log_path
+        captured["label"] = label
+        captured["required"] = required
+        return 0
+
+    monkeypatch.setattr(start, "run_logged", fake_run_logged)
+
+    start.install_libreoffice_portable(
+        installer_path,
+        paths.libreoffice_root,
+        paths.libreoffice_install_log,
+    )
+
+    destination = str(paths.libreoffice_root)
+    if not destination.endswith(start.os.sep):
+        destination += start.os.sep
+
+    assert captured["command"] == [
+        str(installer_path),
+        "/S",
+        f"/DESTINATION={destination}",
+    ]
+
+
 def test_ensure_libreoffice_uses_existing_soffice_without_download(monkeypatch, tmp_path) -> None:
     """已经能找到 LibreOffice 时，启动器不应重复下载便携版。"""
 

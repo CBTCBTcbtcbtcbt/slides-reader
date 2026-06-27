@@ -139,26 +139,58 @@ def render_page_image(page: pymupdf.Page, document_id: str, page_number: int) ->
 def resolve_soffice_path() -> Path | None:
     """查找 LibreOffice 的 soffice.exe 路径。"""
 
-    candidate_paths = [
+    project_root = BASE_DIR.parent
+    tools_dir = project_root / "tools"
+    libreoffice_root = tools_dir / "libreoffice"
+    local_candidate_paths = [
         getenv("SLIDES_READER_SOFFICE_PATH", ""),
         str(
-            BASE_DIR.parent
-            / "tools"
-            / "libreoffice"
+            libreoffice_root
             / "LibreOfficePortable"
             / "App"
             / "libreoffice"
             / "program"
             / "soffice.exe"
         ),
+        str(libreoffice_root / "App" / "libreoffice" / "program" / "soffice.exe"),
+        str(
+            tools_dir
+            / "libreofficeLibreOfficePortable"
+            / "App"
+            / "libreoffice"
+            / "program"
+            / "soffice.exe"
+        ),
+    ]
+    system_candidate_paths = [
         r"C:\Program Files\LibreOffice\program\soffice.exe",
         r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
     ]
 
-    for candidate_path in candidate_paths:
+    for candidate_path in local_candidate_paths:
         if not candidate_path:
             continue
 
+        resolved_path = Path(candidate_path).resolve()
+        if resolved_path.exists() and resolved_path.is_file():
+            return resolved_path
+
+    for portable_root in (
+        libreoffice_root,
+        libreoffice_root / "LibreOfficePortable",
+        tools_dir / "libreofficeLibreOfficePortable",
+    ):
+        if not portable_root.exists():
+            continue
+
+        matches = sorted(
+            (path for path in portable_root.rglob("soffice.exe") if path.is_file()),
+            key=lambda path: (len(path.parts), str(path).lower()),
+        )
+        if matches:
+            return matches[0].resolve()
+
+    for candidate_path in system_candidate_paths:
         resolved_path = Path(candidate_path).resolve()
         if resolved_path.exists() and resolved_path.is_file():
             return resolved_path

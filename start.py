@@ -275,6 +275,84 @@ def is_windows() -> bool:
     return os.name == "nt"
 
 
+def resolve_existing_file(candidate: str | Path | None) -> Path | None:
+    """把候选文件路径解析成真实存在的绝对路径，不存在时返回 None。"""
+
+    if not candidate:
+        return None
+
+    candidate_path = Path(candidate)
+    if candidate_path.exists() and candidate_path.is_file():
+        return candidate_path.resolve()
+
+    return None
+
+
+def libreoffice_portable_roots(paths: RuntimePaths = PATHS) -> tuple[Path, ...]:
+    """返回 release 内可能保存 LibreOffice Portable 的目录。"""
+
+    return (
+        paths.libreoffice_root,
+        paths.libreoffice_root / "LibreOfficePortable",
+        paths.tools_dir / "libreofficeLibreOfficePortable",
+    )
+
+
+def libreoffice_portable_candidates(paths: RuntimePaths = PATHS) -> tuple[Path, ...]:
+    """返回 release 内常见 LibreOffice Portable 的 soffice.exe 候选路径。"""
+
+    return (
+        paths.portable_soffice,
+        paths.libreoffice_root / "App" / "libreoffice" / "program" / "soffice.exe",
+        paths.tools_dir
+        / "libreofficeLibreOfficePortable"
+        / "App"
+        / "libreoffice"
+        / "program"
+        / "soffice.exe",
+    )
+
+
+def resolve_local_soffice_path(paths: RuntimePaths = PATHS) -> Path | None:
+    """优先从 release 文件夹内部查找 LibreOffice Portable 的 soffice.exe。"""
+
+    # 先检查已知固定结构，避免递归扫描时被其他同名文件影响优先级。
+    for candidate in libreoffice_portable_candidates(paths):
+        resolved_path = resolve_existing_file(candidate)
+        if resolved_path is not None:
+            return resolved_path
+
+    # PortableApps 安装器的目录结构未来可能变化，所以最后在本地工具目录内做兜底扫描。
+    for portable_root in libreoffice_portable_roots(paths):
+        if not portable_root.exists():
+            continue
+
+        matches = sorted(
+            (path for path in portable_root.rglob("soffice.exe") if path.is_file()),
+            key=lambda path: (len(path.parts), str(path).lower()),
+        )
+        if matches:
+            return matches[0].resolve()
+
+    return None
+
+
+def format_portableapps_destination(destination: Path) -> str:
+    """生成 PortableApps 安装器需要的目标目录参数。"""
+
+    destination_text = str(destination)
+    separators = [os.sep]
+    if os.altsep:
+        separators.append(os.altsep)
+
+    # PortableApps 安装器会把 AppName 拼到目标目录后面；没有结尾分隔符时可能变成
+    # libreofficeLibreOfficePortable，所以这里显式保留结尾目录分隔符。
+    if not any(destination_text.endswith(separator) for separator in separators):
+        destination_text += os.sep
+
+    return destination_text
+
+
 def backend_python(paths: RuntimePaths = PATHS) -> Path:
     """返回当前操作系统下预期的后端虚拟环境 Python 路径。"""
 
@@ -651,7 +729,15 @@ def resolve_soffice_path(paths: RuntimePaths = PATHS, env: dict[str, str] | None
     """按固定优先级查找 LibreOffice 的 soffice 可执行文件。"""
 
     env = os.environ if env is None else env
-    candidates = [env.get("SLIDES_READER_SOFFICE_PATH"), str(paths.portable_soffice)]
+    env_soffice = resolve_existing_file(env.get("SLIDES_READER_SOFFICE_PATH"))
+    if env_soffice is not None:
+        return env_soffice
+
+    local_soffice = resolve_local_soffice_path(paths)
+    if local_soffice is not None:
+        return local_soffice
+
+    candidates: list[str | None] = []
     if is_windows():
         candidates.extend(
             [
@@ -665,8 +751,9 @@ def resolve_soffice_path(paths: RuntimePaths = PATHS, env: dict[str, str] | None
 
     candidates.append(path_command)
     for candidate in candidates:
-        if candidate and Path(candidate).exists():
-            return Path(candidate).resolve()
+        resolved_path = resolve_existing_file(candidate)
+        if resolved_path is not None:
+            return resolved_path
     return None
 
 
@@ -703,7 +790,7 @@ def install_libreoffice_portable(installer_path: Path, destination: Path, log_pa
     """静默安装 PortableApps 版 LibreOffice 到 release/tools 目录。"""
 
     destination.mkdir(parents=True, exist_ok=True)
-    command = [str(installer_path), "/S", f"/DESTINATION={destination}"]
+    command = [str(installer_path), "/S", f"/DESTINATION={format_portableapps_destination(destination)}"]
     run_logged(
         command,
         destination,
