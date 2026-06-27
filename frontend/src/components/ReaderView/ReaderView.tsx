@@ -160,9 +160,8 @@ export function ReaderView({
               展开顶部
             </button>
             <span className="reader-collapsed-title">{readerDocument.title}</span>
-            <span className="reader-collapsed-page">
-              第 {currentPdfPage} / {totalPdfPages || readerDocument.page_count || "-"} 页
-            </span>
+            {/* 折叠顶部栏仍复用完整翻页控件，避免展开态和折叠态维护两套翻页逻辑。 */}
+            <div className="reader-collapsed-page-controls">{pageTurnControls}</div>
           </header>
         ) : (
           <header className="reader-topbar">

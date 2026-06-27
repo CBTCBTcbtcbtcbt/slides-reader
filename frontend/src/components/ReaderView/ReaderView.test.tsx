@@ -1,5 +1,5 @@
 import { createRef } from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { DocumentItem, DocumentStatusResponse } from "../../types/api";
 import type { ReaderRightSidebar } from "../../types/ui";
@@ -56,7 +56,13 @@ function buildStatus(): DocumentStatusResponse {
   };
 }
 
-function renderReaderView(options: { readerRightSidebar?: ReaderRightSidebar } = {}) {
+function renderReaderView(
+  options: {
+    readerRightSidebar?: ReaderRightSidebar;
+    isReaderTopbarCollapsed?: boolean;
+    pageTurnControls?: React.ReactNode;
+  } = {},
+) {
   const readerWorkspaceRef = createRef<HTMLElement>();
   const readerViewportRef = createRef<HTMLDivElement>();
   const readerContentRef = createRef<HTMLDivElement>();
@@ -65,7 +71,7 @@ function renderReaderView(options: { readerRightSidebar?: ReaderRightSidebar } =
     <ReaderView
       readerDocument={buildDocument()}
       readerRightSidebar={options.readerRightSidebar ?? "none"}
-      isReaderTopbarCollapsed={false}
+      isReaderTopbarCollapsed={options.isReaderTopbarCollapsed ?? false}
       isReaderChatCollapsed={true}
       currentPdfPage={1}
       totalPdfPages={1}
@@ -74,7 +80,7 @@ function renderReaderView(options: { readerRightSidebar?: ReaderRightSidebar } =
       activeDocumentStatus={buildStatus()}
       currentReaderPage={undefined}
       currentPageChatCount={0}
-      pageTurnControls={<div>翻页控件</div>}
+      pageTurnControls={options.pageTurnControls ?? <div>翻页控件</div>}
       pageChatContent={<div>问答内容</div>}
       pageChatStatus={<div>问答状态</div>}
       noteSidebarContent={<div>讲稿内容</div>}
@@ -129,5 +135,22 @@ describe("ReaderView", () => {
 
     expect(screen.queryByText(/LLM 请求超时/)).not.toBeInTheDocument();
     expect(screen.getByText("课程简介生成失败，请回到课件库查看详情或重新生成。")).toBeInTheDocument();
+  });
+
+  it("顶部栏折叠后仍然展示翻页控件", () => {
+    renderReaderView({
+      isReaderTopbarCollapsed: true,
+      pageTurnControls: (
+        <div>
+          <button type="button">上一页</button>
+          <button type="button">下一页</button>
+        </div>
+      ),
+    });
+
+    const collapsedTopbar = screen.getByRole("banner");
+
+    expect(within(collapsedTopbar).getByRole("button", { name: "上一页" })).toBeInTheDocument();
+    expect(within(collapsedTopbar).getByRole("button", { name: "下一页" })).toBeInTheDocument();
   });
 });

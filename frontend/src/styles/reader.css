@@ -96,6 +96,16 @@
   font-weight: 800;
 }
 
+.reader-collapsed-page-controls {
+  min-width: 0;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.reader-collapsed-page-controls .pdf-reader-toolbar {
+  justify-content: flex-end;
+}
+
 .reader-main-actions,
 .reader-secondary-actions,
 .reader-status-row {
