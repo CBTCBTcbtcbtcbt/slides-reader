@@ -68,7 +68,7 @@ SlidesReader/
   README.md
 ```
 
-如果电脑里已经有 LibreOffice，应用会直接使用它处理 PPT 和 PPTX。如果没有，应用会在需要时自动准备。LibreOffice 是一个办公套件，本项目用它把 PPT 和 PPTX 转成可以阅读的页面。
+如果电脑里已经有 LibreOffice，应用会直接使用它处理 PPT 和 PPTX。如果没有，可以手动下载，或是让启动脚本自动下载（可能不稳定）。LibreOffice 是一个办公套件，本项目用它把 PPT 和 PPTX 转成可以阅读的页面。
 
 使用发行版时，运行数据默认保存在：
 
