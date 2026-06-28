@@ -39,6 +39,11 @@ Slides Reader 是一个AI集成的课件阅读器。你可以把 PDF、PPT 或 P
 - 可以自定义生成课程简介、讲稿、问答和试卷时使用的提示词。
 - 应用会保存课件、生成内容、答题记录和错题记录。
 
+
+<img src="docs\assets\homepage.png" alt="Slides Reader 首页" width="800">
+<img src="docs\assets\slides.png" alt="Slides Reader 首页" width="800">
+<img src="docs\assets\tests.png" alt="Slides Reader 首页" width="800">
+
 ## 快速开始
 
 下载最新release版。解压后，进入文件夹。然后双击：
